@@ -38,8 +38,13 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
   const [streamingContent, setStreamingContent] = useState('');
   const [activeTab, setActiveTab] = useState('answer');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const skipSyncRef = useRef(false);
 
   useEffect(() => {
+    if (skipSyncRef.current) {
+      skipSyncRef.current = false;
+      return;
+    }
     setLocalMessages(messages);
   }, [messages]);
 
@@ -60,6 +65,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
       timestamp: new Date(),
     };
     setLocalMessages(prev => [...prev, userMessage]);
+    skipSyncRef.current = true;
     onNewMessage(userMessage);
 
     setIsLoading(true);
@@ -83,6 +89,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
           timestamp: new Date(),
         };
         setLocalMessages(prev => [...prev, assistantMessage]);
+        skipSyncRef.current = true;
         onNewMessage(assistantMessage);
         setIsLoading(false);
         setStreamingContent('');
