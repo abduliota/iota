@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '@/lib/types';
-import { MessageBubble } from './MessageBubble';
-import { ChatInput } from './ChatInput';
-import { TypingIndicator } from './TypingIndicator';
+import { AnimatedMessage } from './AnimatedMessage';
+import { AnimatedInput } from './AnimatedInput';
+import { AnimatedTypingIndicator } from './AnimatedTypingIndicator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { mockStreamResponse } from '@/lib/mock-streaming';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,6 +12,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 interface ChatInterfaceProps {
   messages: Message[];
   onNewMessage: (message: Message) => void;
+  canSend?: boolean;
+  onLimitReached?: () => void;
 }
 
 const MOCK_RESPONSES = [
@@ -30,7 +32,7 @@ const MOCK_RESPONSES = [
   },
 ];
 
-export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
+export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitReached }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [activeTab, setActiveTab] = useState('answer');
@@ -41,6 +43,11 @@ export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
   }, [messages, streamingContent]);
 
   const handleSend = (content: string) => {
+    if (!canSend) {
+      onLimitReached?.();
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -117,15 +124,15 @@ export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
           </div>
         ) : (
           <>
-            {allMessages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+            {allMessages.map((msg, index) => (
+              <AnimatedMessage key={msg.id} message={msg} index={index} />
             ))}
-            {isLoading && !streamingContent && <TypingIndicator />}
+            {isLoading && !streamingContent && <AnimatedTypingIndicator />}
             <div ref={messagesEndRef} />
           </>
         )}
       </ScrollArea>
-      <ChatInput onSend={handleSend} disabled={isLoading} />
+      <AnimatedInput onSend={handleSend} disabled={isLoading} canSend={canSend} onLimitReached={onLimitReached} />
     </div>
   );
 }

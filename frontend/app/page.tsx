@@ -7,15 +7,28 @@ import { getChat, saveChat } from '@/lib/storage';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ChatHistory } from '@/components/sidebar/ChatHistory';
 import { SourcePanel } from '@/components/chat/SourcePanel';
+import { usePromptLimit } from '@/hooks/usePromptLimit';
+import { useFingerprintAuth } from '@/hooks/useFingerprintAuth';
+import { PromptCounter } from '@/components/auth/PromptCounter';
+import { AuthModal } from '@/components/auth/AuthModal';
 
 export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [showSources, setShowSources] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const { remainingPrompts, canSend, incrementPrompt, resetPrompts } = usePromptLimit();
+  const { isAuthenticated, register, login, logout } = useFingerprintAuth();
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      resetPrompts();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (selectedChatId) {
@@ -27,6 +40,10 @@ export default function Home() {
   }, [selectedChatId]);
 
   const handleNewMessage = (message: Message) => {
+    if (message.role === 'user' && !isAuthenticated) {
+      incrementPrompt();
+    }
+
     let chat: Chat;
 
     if (!currentChat) {
@@ -63,6 +80,13 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] transition-colors duration-200">
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30">
+        <PromptCounter
+          remaining={remainingPrompts}
+          total={10}
+          isAuthenticated={isAuthenticated}
+        />
+      </div>
       <ChatHistory 
         selectedChatId={selectedChatId} 
         onSelectChat={setSelectedChatId}
@@ -73,11 +97,15 @@ export default function Home() {
             <ChatInterface 
               messages={currentChat.messages}
               onNewMessage={handleNewMessage}
+              canSend={isAuthenticated || canSend}
+              onLimitReached={() => setShowAuthModal(true)}
             />
           ) : (
             <ChatInterface 
               messages={[]}
               onNewMessage={handleNewMessage}
+              canSend={isAuthenticated || canSend}
+              onLimitReached={() => setShowAuthModal(true)}
             />
           )}
         </div>
@@ -95,6 +123,13 @@ export default function Home() {
           onClose={() => setShowSources(false)}
         />
       </div>
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => {}}
+        onRegister={register}
+        onLogin={login}
+      />
     </div>
   );
 }
