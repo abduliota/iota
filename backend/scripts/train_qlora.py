@@ -95,7 +95,7 @@ def main():
         num_train_epochs=1,
         learning_rate=2e-4,
         logging_steps=20,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=200,
         save_steps=200,
         bf16=False,
