@@ -99,7 +99,12 @@ backend/downloads/
 
 # Data files
 *.csv
+# Ignore JSON files but allow important config files
 *.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
 *.parquet
 *.h5
 *.hdf5
