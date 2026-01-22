@@ -43,24 +43,31 @@ export function useFingerprintAuth() {
     }
 
     try {
+      // Handle rpId for localhost/development
+      const rpId = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'localhost'
+        : window.location.hostname;
+
       const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
         rp: {
           name: 'KSA RegTech',
-          id: window.location.hostname,
+          id: rpId,
         },
         user: {
           id: new TextEncoder().encode(email),
           name: email,
           displayName: email,
         },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+        pubKeyCredParams: [
+          { alg: -7, type: 'public-key' },   // ES256
+          { alg: -257, type: 'public-key' }, // RS256
+        ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
+          userVerification: 'preferred',
         },
         timeout: 60000,
-        attestation: 'direct',
+        attestation: 'none',
       };
 
       const credential = await navigator.credentials.create({
@@ -87,7 +94,15 @@ export function useFingerprintAuth() {
 
       return { success: false, error: 'Registration failed' };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Registration failed' };
+      let errorMessage = 'Registration failed';
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Fingerprint authentication was cancelled or not available';
+      } else if (error.name === 'TimeoutError') {
+        errorMessage = 'Fingerprint authentication timed out. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -105,15 +120,20 @@ export function useFingerprintAuth() {
       const credentialData = JSON.parse(storedCredential);
       const credentialId = Uint8Array.from(credentialData.rawId);
 
+      // Handle rpId for localhost/development
+      const rpId = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'localhost'
+        : window.location.hostname;
+
       const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rpId: rpId,
         allowCredentials: [{
           id: credentialId,
           type: 'public-key',
-          transports: ['internal'],
         }],
         timeout: 60000,
-        userVerification: 'required',
+        userVerification: 'preferred',
       };
 
       const assertion = await navigator.credentials.get({
@@ -135,7 +155,15 @@ export function useFingerprintAuth() {
 
       return { success: false, error: 'Authentication failed' };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Authentication failed' };
+      let errorMessage = 'Authentication failed';
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Fingerprint authentication was cancelled or not available';
+      } else if (error.name === 'TimeoutError') {
+        errorMessage = 'Fingerprint authentication timed out. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      return { success: false, error: errorMessage };
     }
   };
 
