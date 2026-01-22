@@ -12,29 +12,10 @@ export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [showSources, setShowSources] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    const initialTheme = savedTheme || 'dark';
-    setTheme(initialTheme);
-    if (initialTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.add('dark');
   }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
 
   useEffect(() => {
     if (selectedChatId) {
@@ -81,7 +62,7 @@ export default function Home() {
     ) || [];
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] dark:bg-[#0a0a0a] transition-colors duration-200">
+    <div className="flex h-screen bg-[#0a0a0a] transition-colors duration-200">
       <ChatHistory 
         selectedChatId={selectedChatId} 
         onSelectChat={setSelectedChatId}
@@ -100,17 +81,10 @@ export default function Home() {
             />
           )}
         </div>
-        <button
-          onClick={toggleTheme}
-          className="absolute top-4 right-4 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 shadow-md hover:shadow-lg hover:shadow-blue-200/30 dark:hover:shadow-blue-500/20 transition-all duration-200 transform hover:scale-110 z-20"
-          aria-label="Toggle theme"
-        >
-          {theme === 'light' ? '🌙' : '☀️'}
-        </button>
         {allReferences.length > 0 && (
           <button
             onClick={() => setShowSources(!showSources)}
-            className="absolute top-4 right-20 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-300/50 dark:hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
+            className="absolute top-4 right-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
           >
             {showSources ? 'Hide' : 'Show'} Sources
           </button>

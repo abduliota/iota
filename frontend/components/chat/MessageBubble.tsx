@@ -32,12 +32,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`max-w-[80%] rounded-lg p-4 transition-all duration-200 ${isUser ? 'bg-blue-600 dark:bg-blue-500 text-white' : 'bg-[#1a1a1a] dark:bg-[#1a1a1a] text-gray-100'}`}>
+      <div className={`max-w-[80%] rounded-lg p-4 transition-all duration-200 ${isUser ? 'bg-blue-500 text-white' : 'bg-[#1a1a1a] text-gray-100'}`}>
         {isUser ? (
           <div className="whitespace-pre-wrap">{message.content}</div>
         ) : (
           <>
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="prose prose-sm max-w-none prose-invert">
               <ReactMarkdown>{message.content}</ReactMarkdown>
             </div>
             {message.references && <References references={message.references} />}

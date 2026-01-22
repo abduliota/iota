@@ -24,14 +24,14 @@ export function ChatItem({ chat, isSelected, onClick, onDelete }: ChatItemProps)
   return (
     <div
       onClick={onClick}
-      className={`group p-3 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 ${
-        isSelected ? 'bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700' : ''
+      className={`group p-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-all duration-200 ${
+        isSelected ? 'bg-blue-900 border border-blue-700' : ''
       }`}
     >
       <div className="flex justify-between items-start">
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate dark:text-white">{chat.title}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatDate(chat.updatedAt)}</div>
+          <div className="font-medium text-sm truncate text-white">{chat.title}</div>
+          <div className="text-xs text-gray-400 mt-1">{formatDate(chat.updatedAt)}</div>
         </div>
         <Button
           variant="ghost"

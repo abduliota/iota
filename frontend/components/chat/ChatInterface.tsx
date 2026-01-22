@@ -87,7 +87,7 @@ export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0a] dark:bg-[#0a0a0a] transition-colors duration-200">
+    <div className="flex flex-col h-screen bg-[#0a0a0a] transition-colors duration-200">
       <div className="border-b border-gray-800 px-4 py-2">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="bg-transparent">
@@ -96,20 +96,20 @@ export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
           </TabsList>
         </Tabs>
       </div>
-      <ScrollArea className="flex-1 p-4 bg-[#0a0a0a] dark:bg-[#0a0a0a]">
+      <ScrollArea className="flex-1 p-4 bg-[#0a0a0a]">
         {allMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Ask KSA regulatory questions</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-white">Ask KSA regulatory questions</h2>
             <div className="space-y-2">
               <button
                 onClick={() => handleSend('What is LoRA?')}
-                className="px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-200/50 dark:hover:shadow-blue-500/30 hover:border-blue-400 dark:hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="px-4 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
               >
                 What is LoRA?
               </button>
               <button
                 onClick={() => handleSend('Summarize this document')}
-                className="px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-200/50 dark:hover:shadow-blue-500/30 hover:border-blue-400 dark:hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="px-4 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
               >
                 Summarize this document
               </button>
