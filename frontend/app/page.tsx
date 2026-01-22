@@ -12,14 +12,16 @@ export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [showSources, setShowSources] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    const initialTheme = savedTheme || 'light';
+    const initialTheme = savedTheme || 'dark';
     setTheme(initialTheme);
     if (initialTheme === 'dark') {
       document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
   }, []);
 
@@ -79,7 +81,7 @@ export default function Home() {
     ) || [];
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
+    <div className="flex h-screen bg-[#0a0a0a] dark:bg-[#0a0a0a] transition-colors duration-200">
       <ChatHistory 
         selectedChatId={selectedChatId} 
         onSelectChat={setSelectedChatId}

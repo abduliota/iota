@@ -7,6 +7,7 @@ import { ChatInput } from './ChatInput';
 import { TypingIndicator } from './TypingIndicator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { mockStreamResponse } from '@/lib/mock-streaming';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -32,6 +33,7 @@ const MOCK_RESPONSES = [
 export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [activeTab, setActiveTab] = useState('answer');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,11 +87,19 @@ export function ChatInterface({ messages, onNewMessage }: ChatInterfaceProps) {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
-      <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-900">
+    <div className="flex flex-col h-screen bg-[#0a0a0a] dark:bg-[#0a0a0a] transition-colors duration-200">
+      <div className="border-b border-gray-800 px-4 py-2">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-transparent">
+            <TabsTrigger value="answer" className="data-[state=active]:bg-gray-800">Answer</TabsTrigger>
+            <TabsTrigger value="links" className="data-[state=active]:bg-gray-800">Links</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+      <ScrollArea className="flex-1 p-4 bg-[#0a0a0a] dark:bg-[#0a0a0a]">
         {allMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Ask questions about your PDFs</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Ask KSA regulatory questions</h2>
             <div className="space-y-2">
               <button
                 onClick={() => handleSend('What is LoRA?')}
