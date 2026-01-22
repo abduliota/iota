@@ -33,14 +33,19 @@ const MOCK_RESPONSES = [
 ];
 
 export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitReached }: ChatInterfaceProps) {
+  const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [activeTab, setActiveTab] = useState('answer');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setLocalMessages(messages);
+  }, [messages]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+  }, [localMessages, streamingContent]);
 
   const handleSend = (content: string) => {
     if (!canSend) {
@@ -54,6 +59,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
       content,
       timestamp: new Date(),
     };
+    setLocalMessages(prev => [...prev, userMessage]);
     onNewMessage(userMessage);
 
     setIsLoading(true);
@@ -76,6 +82,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
           references: mockResponse.references,
           timestamp: new Date(),
         };
+        setLocalMessages(prev => [...prev, assistantMessage]);
         onNewMessage(assistantMessage);
         setIsLoading(false);
         setStreamingContent('');
@@ -83,7 +90,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
     );
   };
 
-  const allMessages = [...messages];
+  const allMessages = [...localMessages];
   if (streamingContent) {
     allMessages.push({
       id: 'streaming',
