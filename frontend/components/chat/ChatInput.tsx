@@ -26,7 +26,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900 transition-colors duration-200">
+    <div className="border-t border-gray-800 p-4 bg-[#0a0a0a] transition-colors duration-200">
       <div className="flex gap-2">
         <textarea
           value={input}
@@ -34,7 +34,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder="Type your message... (Enter to send, Shift+Enter for newline)"
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400 transition-all duration-200"
+          className="flex-1 px-4 py-2 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 bg-[#1a1a1a] text-white placeholder-gray-400 transition-all duration-200"
           rows={1}
         />
         <Button onClick={handleSubmit} disabled={disabled || !input.trim()}>

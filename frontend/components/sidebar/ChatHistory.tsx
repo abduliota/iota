@@ -6,7 +6,6 @@ import { getChats, deleteChat } from '@/lib/storage';
 import { ChatItem } from './ChatItem';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { IngestCard } from '@/components/ingest/IngestCard';
 
 interface ChatHistoryProps {
   selectedChatId: string | null;
@@ -33,8 +32,8 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
   };
 
   return (
-    <div className="w-64 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors duration-200">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+    <div className="w-64 border-r border-gray-800 bg-[#0a0a0a] flex flex-col transition-colors duration-200">
+      <div className="p-4 border-b border-gray-800">
         <Button onClick={handleNewChat} className="w-full">
           + New Chat
         </Button>
@@ -52,9 +51,6 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
           ))}
         </div>
       </ScrollArea>
-      <div className="p-2">
-        <IngestCard />
-      </div>
     </div>
   );
 }
