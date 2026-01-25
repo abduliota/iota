@@ -31,6 +31,23 @@ def load_test(path: str) -> List[Dict]:
     return items
 
 
+def extract_assistant_response(full_output: str) -> str:
+    """Extract only the assistant's response from the full output."""
+    # The model outputs: "system\n...\nuser\n...\nassistant\n[answer]"
+    if "assistant" in full_output.lower():
+        # Split by "assistant" and take the last part
+        parts = full_output.split("assistant")
+        if len(parts) > 1:
+            answer = parts[-1].strip()
+            # Remove any remaining system/user prompts
+            if "\nuser\n" in answer:
+                answer = answer.split("\nuser\n")[0]
+            if "\nsystem\n" in answer:
+                answer = answer.split("\nsystem\n")[0]
+            return answer.strip()
+    return full_output.strip()
+
+
 def main():
     tokenizer = AutoTokenizer.from_pretrained(ADAPTER_DIR, use_fast=False)
     tokenizer.pad_token = tokenizer.eos_token
@@ -69,7 +86,9 @@ def main():
                 do_sample=False,
             )
         output = tokenizer.decode(gen[0], skip_special_tokens=True)
-        out.append({"question": item["question"], "reference": item["answer"], "prediction": output})
+        # Extract only assistant response
+        clean_output = extract_assistant_response(output)
+        out.append({"question": item["question"], "reference": item["answer"], "prediction": clean_output})
 
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         for r in out:

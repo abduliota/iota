@@ -138,7 +138,7 @@ def main():
     out_path = os.path.join(out_dir, "qa_raw.jsonl")
 
     client = build_client()
-    chunks = sample_chunks(limit_ar=250, limit_en=250)
+    chunks = sample_chunks(limit_ar=750, limit_en=750)
     random.shuffle(chunks)
 
     total_written = 0
