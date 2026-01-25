@@ -4,6 +4,7 @@ from typing import List, Dict
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel
 
 """
 Minimal eval:
@@ -40,12 +41,7 @@ def main():
         device_map="auto",
         load_in_4bit=True,
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        ADAPTER_DIR,
-        torch_dtype=torch.float16,
-        device_map="auto",
-    )
-    # In PEFT merge, load adapter weights into base (simplified here: use adapter directly)
+    model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
     model.config.pad_token_id = tokenizer.pad_token_id
 
     test_path = os.path.join(DATA_DIR, "test.jsonl")
