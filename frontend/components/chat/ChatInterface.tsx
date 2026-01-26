@@ -6,7 +6,6 @@ import { AnimatedMessage } from './AnimatedMessage';
 import { AnimatedInput } from './AnimatedInput';
 import { AnimatedTypingIndicator } from './AnimatedTypingIndicator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { mockStreamResponse } from '@/lib/mock-streaming';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface ChatInterfaceProps {
@@ -15,22 +14,6 @@ interface ChatInterfaceProps {
   canSend?: boolean;
   onLimitReached?: () => void;
 }
-
-const MOCK_RESPONSES = [
-  {
-    content: 'LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning method that reduces the number of trainable parameters by using low-rank matrices.',
-    references: [
-      { id: '1', source: 'research_paper.pdf', page: 3, snippet: 'LoRA introduces trainable rank decomposition matrices...' },
-      { id: '2', source: 'huggingface_blog.pdf', page: 1, snippet: 'Parameter-efficient fine-tuning with LoRA...' },
-    ],
-  },
-  {
-    content: 'Based on the documents, here is a summary of the key points...',
-    references: [
-      { id: '1', source: 'document.pdf', page: 5, snippet: 'Key findings suggest...' },
-    ],
-  },
-];
 
 export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitReached }: ChatInterfaceProps) {
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
@@ -52,7 +35,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localMessages, streamingContent]);
 
-  const handleSend = (content: string) => {
+  const handleSend = async (content: string) => {
     if (!canSend) {
       onLimitReached?.();
       return;
@@ -71,30 +54,67 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
     setIsLoading(true);
     setStreamingContent('');
 
-    const mockResponse = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
     let fullContent = '';
+    let references: any[] = [];
 
-    mockStreamResponse(
-      mockResponse.content,
-      (chunk) => {
-        fullContent += chunk;
-        setStreamingContent(fullContent);
-      },
-      () => {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: fullContent,
-          references: mockResponse.references,
-          timestamp: new Date(),
-        };
-        setLocalMessages(prev => [...prev, assistantMessage]);
-        skipSyncRef.current = true;
-        onNewMessage(assistantMessage);
-        setIsLoading(false);
-        setStreamingContent('');
+    try {
+      const response = await fetch('http://localhost:8000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: content }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API request failed');
       }
-    );
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'token') {
+              fullContent += data.content;
+              setStreamingContent(fullContent);
+            } else if (data.type === 'done') {
+              references = data.references || [];
+            }
+          }
+        }
+      }
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: fullContent,
+        references: references,
+        timestamp: new Date(),
+      };
+      setLocalMessages(prev => [...prev, assistantMessage]);
+      skipSyncRef.current = true;
+      onNewMessage(assistantMessage);
+      setIsLoading(false);
+      setStreamingContent('');
+    } catch (error) {
+      console.error('Chat error:', error);
+      setIsLoading(false);
+      setStreamingContent('');
+    }
   };
 
   const allMessages = [...localMessages];
