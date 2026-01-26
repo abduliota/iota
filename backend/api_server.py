@@ -19,7 +19,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost:\d+|.*\.vercel\.app)",
+    allow_origin_regex=r"https?://(localhost:\d+|.*\.vercel\.app|.*\.trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
