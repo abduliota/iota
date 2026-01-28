@@ -100,6 +100,11 @@ backend/downloads/
 *.pth
 *.ckpt
 
+# Allow lightweight LoRA adapter artifacts to be committed
+!backend/models/lora_adapter/**/adapter_config.json
+!backend/models/lora_adapter/**/adapter_model.bin
+!backend/models/lora_adapter/**/adapter_model.safetensors
+
 # Data files
 *.csv
 # Ignore JSON files but allow important config files
