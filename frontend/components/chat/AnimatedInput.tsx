@@ -62,22 +62,6 @@ export function AnimatedInput({ onSend, disabled = false, canSend = true, onLimi
             className={`w-full px-4 py-3 pr-12 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 bg-[#1a1a1a] text-white placeholder-gray-400 transition-all duration-200 max-h-32 custom-scroll ${!canSend ? 'cursor-pointer' : ''}`}
             rows={1}
           />
-          <div className="absolute right-2 bottom-2 flex gap-1">
-            <button
-              className="p-1.5 text-gray-400 hover:text-white transition-colors"
-              aria-label="Attach file"
-              title="Attach file"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-            <button
-              className="p-1.5 text-gray-400 hover:text-white transition-colors"
-              aria-label="Voice input"
-              title="Voice input"
-            >
-              <Mic className="h-4 w-4" />
-            </button>
-          </div>
         </div>
         <motion.div
           whileHover={{ scale: 1.05 }}
