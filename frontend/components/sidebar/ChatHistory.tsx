@@ -33,7 +33,7 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
 
   return (
     <div className="flex flex-col h-full transition-colors duration-200">
-      <ScrollArea className="flex-1 p-2">
+      <ScrollArea className="flex-1 p-2 custom-scroll">
         <div className="space-y-2">
           {chats.map((chat) => (
             <ChatItem
