@@ -129,45 +129,92 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0a] transition-colors duration-200">
-      <div className="border-b border-gray-800 px-4 py-2">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-transparent">
-            <TabsTrigger value="answer" className="data-[state=active]:bg-gray-800">Answer</TabsTrigger>
-            <TabsTrigger value="links" className="data-[state=active]:bg-gray-800">Links</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-      <ScrollArea className="flex-1 p-4 bg-[#0a0a0a]">
-        {allMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <h2 className="text-2xl font-semibold mb-4 text-white">Ask KSA regulatory questions</h2>
-            <div className="space-y-2">
-              <button
-                onClick={() => handleSend('What is LoRA?')}
-                className="px-4 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
-              >
-                What is LoRA?
-              </button>
-              <button
-                onClick={() => handleSend('Summarize this document')}
-                className="px-4 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg text-sm shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:border-blue-500 transition-all duration-200 transform hover:scale-105 active:scale-95"
-              >
-                Summarize this document
-              </button>
-            </div>
+    <div className="flex h-full">
+      <div className="flex flex-col flex-1 bg-background text-foreground transition-colors duration-200 rounded-none sm:rounded-2xl border border-border/60 overflow-hidden">
+        {/* Chat header */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b border-border/70 bg-background/90 backdrop-blur-sm">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground/80">
+              Conversation
+            </span>
+            <span className="text-sm font-medium text-foreground">
+              KSA Regulatory Assistant
+            </span>
           </div>
-        ) : (
-          <>
-            {allMessages.map((msg, index) => (
-              <AnimatedMessage key={msg.id} message={msg} index={index} />
-            ))}
-            {isLoading && !streamingContent && <AnimatedTypingIndicator />}
-            <div ref={messagesEndRef} />
-          </>
-        )}
-      </ScrollArea>
-      <AnimatedInput onSend={handleSend} disabled={isLoading} canSend={canSend} onLimitReached={onLimitReached} />
+          <div className="flex items-center gap-2">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="bg-muted/60 h-8 px-1 rounded-full">
+                <TabsTrigger
+                  value="answer"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground rounded-full px-3 py-1 text-xs"
+                >
+                  Answer
+                </TabsTrigger>
+                <TabsTrigger
+                  value="links"
+                  className="data-[state=active]:bg-background data-[state=active]:text-foreground rounded-full px-3 py-1 text-xs"
+                >
+                  Links
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
+
+        {/* Messages area */}
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full px-3 sm:px-4 lg:px-6 py-4">
+            {allMessages.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="max-w-md w-full rounded-2xl border border-border/60 bg-muted/40 px-5 py-6 text-left shadow-sm">
+                  <h2 className="text-base sm:text-lg font-semibold text-foreground mb-2">
+                    Ask KSA regulatory questions
+                  </h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground mb-4">
+                    Get clear, grounded answers on Saudi regulatory frameworks, requirements, and compliance workflows.
+                  </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <button
+                      onClick={() =>
+                        handleSend('What are the key KSA regulatory requirements for fintech startups?')
+                      }
+                      className="w-full sm:w-auto px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
+                    >
+                      KSA fintech regulatory overview
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleSend('Summarize the main AML and CTF requirements in KSA.')
+                      }
+                      className="w-full sm:w-auto px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border/70 bg-muted/40 hover:bg-muted/70 transition-colors"
+                    >
+                      AML / CTF summary
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {allMessages.map((msg, index) => (
+                  <AnimatedMessage key={msg.id} message={msg} index={index} />
+                ))}
+                {isLoading && !streamingContent && <AnimatedTypingIndicator />}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+
+        {/* Input bar */}
+        <div className="border-t border-border/70 bg-background/95 backdrop-blur-sm px-2 sm:px-4 lg:px-6 py-3">
+          <AnimatedInput
+            onSend={handleSend}
+            disabled={isLoading}
+            canSend={canSend}
+            onLimitReached={onLimitReached}
+          />
+        </div>
+      </div>
     </div>
   );
 }

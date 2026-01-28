@@ -46,8 +46,8 @@ export function AnimatedInput({ onSend, disabled = false, canSend = true, onLimi
   };
 
   return (
-    <div className="border-t border-gray-800 p-4 bg-[#0a0a0a]">
-      <div className="flex items-end gap-2">
+    <div className="p-0">
+      <div className="flex items-center gap-2">
         <div 
           className={`flex-1 relative ${!canSend ? 'cursor-pointer' : ''}`}
           onClick={!canSend ? () => onLimitReached?.() : undefined}
@@ -59,14 +59,22 @@ export function AnimatedInput({ onSend, disabled = false, canSend = true, onLimi
             onKeyDown={handleKeyDown}
             disabled={disabled || !canSend}
             placeholder={canSend ? "Ask KSA regulatory questions..." : "Sign up for unlimited prompts"}
-            className={`w-full px-4 py-3 pr-12 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 bg-[#1a1a1a] text-white placeholder-gray-400 transition-all duration-200 max-h-32 ${!canSend ? 'cursor-pointer' : ''}`}
+            className={`w-full px-4 py-3 pr-12 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 bg-[#1a1a1a] text-white placeholder-gray-400 transition-all duration-200 max-h-32 custom-scroll ${!canSend ? 'cursor-pointer' : ''}`}
             rows={1}
           />
           <div className="absolute right-2 bottom-2 flex gap-1">
-            <button className="p-1.5 text-gray-400 hover:text-white transition-colors">
+            <button
+              className="p-1.5 text-gray-400 hover:text-white transition-colors"
+              aria-label="Attach file"
+              title="Attach file"
+            >
               <Paperclip className="h-4 w-4" />
             </button>
-            <button className="p-1.5 text-gray-400 hover:text-white transition-colors">
+            <button
+              className="p-1.5 text-gray-400 hover:text-white transition-colors"
+              aria-label="Voice input"
+              title="Voice input"
+            >
               <Mic className="h-4 w-4" />
             </button>
           </div>

@@ -15,9 +15,17 @@ export function AnimatedMessage({ message, index }: AnimatedMessageProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: isUser ? 20 : -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      initial={
+        isUser
+          ? { opacity: 0, x: 16 }
+          : { opacity: 0, y: 4 }
+      }
+      animate={{ opacity: 1, x: 0, y: 0 }}
+      transition={{
+        duration: 0.18,
+        ease: 'easeOut',
+        delay: Math.min(index * 0.03, 0.3),
+      }}
     >
       <MessageBubble message={message} />
     </motion.div>

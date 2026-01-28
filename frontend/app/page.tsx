@@ -11,12 +11,15 @@ import { usePromptLimit } from '@/hooks/usePromptLimit';
 import { useFingerprintAuth } from '@/hooks/useFingerprintAuth';
 import { PromptCounter } from '@/components/auth/PromptCounter';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { Button } from '@/components/ui/button';
+import { Menu } from 'lucide-react';
 
 export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [showSources, setShowSources] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { remainingPrompts, canSend, incrementPrompt, resetPrompts } = usePromptLimit();
   const { isAuthenticated, register, login, logout } = useFingerprintAuth();
 
@@ -79,57 +82,143 @@ export default function Home() {
     ) || [];
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] transition-colors duration-200">
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30">
+    <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
+      {/* Prompt counter pinned to top center */}
+      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-30">
         <PromptCounter
           remaining={remainingPrompts}
           total={10}
           isAuthenticated={isAuthenticated}
         />
       </div>
-      <ChatHistory 
-        selectedChatId={selectedChatId} 
-        onSelectChat={setSelectedChatId}
-      />
-      <div className="flex-1 flex relative">
-        <div className="flex-1">
-          {currentChat ? (
-            <ChatInterface 
-              messages={currentChat.messages}
-              onNewMessage={handleNewMessage}
-              canSend={isAuthenticated || canSend}
-              onLimitReached={() => setShowAuthModal(true)}
-            />
-          ) : (
-            <ChatInterface 
-              messages={[]}
-              onNewMessage={handleNewMessage}
-              canSend={isAuthenticated || canSend}
-              onLimitReached={() => setShowAuthModal(true)}
-            />
-          )}
-        </div>
-        {allReferences.length > 0 && (
-          <button
-            onClick={() => setShowSources(!showSources)}
-            className="absolute top-4 right-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
-          >
-            {showSources ? 'Hide' : 'Show'} Sources
-          </button>
-        )}
-        <SourcePanel 
-          sources={allReferences}
-          isOpen={showSources}
-          onClose={() => setShowSources(false)}
+
+      {/* Desktop / tablet sidebar */}
+      <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 border-r border-border bg-card/40">
+        <ChatHistory 
+          selectedChatId={selectedChatId} 
+          onSelectChat={setSelectedChatId}
         />
-      </div>
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onSuccess={() => {}}
-        onRegister={register}
-        onLogin={login}
-      />
+      </aside>
+
+      {/* Main area */}
+      <main className="flex-1 flex flex-col">
+        {/* Mobile header with menu button */}
+        <header className="flex items-center justify-between px-3 py-2 border-b border-border md:hidden bg-background/80 backdrop-blur-sm">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="rounded-full"
+            aria-label="Open chat history"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <span className="text-sm font-medium text-muted-foreground">
+            KSA Regulatory Assistant
+          </span>
+          <div className="flex items-center gap-2">
+            <PromptCounter
+              remaining={remainingPrompts}
+              total={10}
+              isAuthenticated={isAuthenticated}
+            />
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7 rounded-full"
+              aria-label="Start new chat"
+              onClick={() => setSelectedChatId(null)}
+            >
+              +
+            </Button>
+          </div>
+        </header>
+
+        {/* Mobile slide-in sidebar */}
+        {isSidebarOpen && (
+          <div className="fixed inset-0 z-40 flex md:hidden">
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+            <div className="relative z-50 h-full w-72 max-w-full bg-background border-r border-border shadow-lg flex flex-col">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                <span className="text-sm font-medium">
+                  Chats
+                </span>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsSidebarOpen(false)}
+                  aria-label="Close sidebar"
+                >
+                  ✕
+                </button>
+              </div>
+              <ChatHistory 
+                selectedChatId={selectedChatId} 
+                onSelectChat={(id) => {
+                  setSelectedChatId(id);
+                  setIsSidebarOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Centered chat content */}
+        <div className="flex-1 flex flex-col items-center">
+          <div className="hidden md:flex w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl px-2 sm:px-4 lg:px-6 justify-end py-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-full text-xs"
+              onClick={() => setSelectedChatId(null)}
+            >
+              + New chat
+            </Button>
+          </div>
+          <div className="flex-1 w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl px-2 sm:px-4 lg:px-6 flex relative">
+            <div className="flex-1">
+              {currentChat ? (
+                <ChatInterface 
+                  messages={currentChat.messages}
+                  onNewMessage={handleNewMessage}
+                  canSend={isAuthenticated || canSend}
+                  onLimitReached={() => setShowAuthModal(true)}
+                />
+              ) : (
+                <ChatInterface 
+                  messages={[]}
+                  onNewMessage={handleNewMessage}
+                  canSend={isAuthenticated || canSend}
+                  onLimitReached={() => setShowAuthModal(true)}
+                />
+              )}
+            </div>
+            {allReferences.length > 0 && (
+              <button
+                onClick={() => setShowSources(!showSources)}
+                className="absolute top-4 right-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
+              >
+                {showSources ? 'Hide' : 'Show'} Sources
+              </button>
+            )}
+            <SourcePanel 
+              sources={allReferences}
+              isOpen={showSources}
+              onClose={() => setShowSources(false)}
+            />
+          </div>
+        </div>
+
+        <AuthModal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          onSuccess={() => {}}
+          onRegister={register}
+          onLogin={login}
+        />
+      </main>
     </div>
   );
 }

@@ -13,6 +13,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const isSystem = message.role === 'system';
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(message.content);
@@ -30,23 +31,45 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     URL.revokeObjectURL(url);
   };
 
+  if (isSystem) {
+    return (
+      <div className="flex justify-center my-3">
+        <span className="text-[11px] text-muted-foreground text-center">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`max-w-[80%] rounded-lg p-4 transition-all duration-200 ${isUser ? 'bg-blue-500 text-white' : 'bg-[#1a1a1a] text-gray-100'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+      <div
+        className={`max-w-[80%] text-sm leading-relaxed transition-all duration-200 ${
+          isUser
+            ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-3 py-2.5'
+            : 'bg-muted/70 text-foreground rounded-2xl rounded-bl-sm px-3 py-2.5'
+        }`}
+      >
         {isUser ? (
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words">
+            {message.content}
+          </div>
         ) : (
           <>
-            <div className="prose prose-sm max-w-none prose-invert">
+            <div className="prose prose-sm max-w-none prose-invert prose-pre:bg-transparent prose-pre:p-0 prose-code:text-xs">
               <ReactMarkdown>{message.content}</ReactMarkdown>
             </div>
-            {message.references && <References references={message.references} />}
-            <div className="mt-2 flex gap-2">
+            {message.references && (
+              <div className="mt-3">
+                <References references={message.references} />
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1.5">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={downloadMessage}
-                className="text-xs h-8"
+                className="text-[11px] h-7 px-2"
               >
                 <Download className="h-3 w-3 mr-1" />
                 Download
@@ -55,7 +78,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 variant="ghost"
                 size="sm"
                 onClick={copyToClipboard}
-                className="text-xs h-8"
+                className="text-[11px] h-7 px-2"
               >
                 <Copy className="h-3 w-3 mr-1" />
                 Copy

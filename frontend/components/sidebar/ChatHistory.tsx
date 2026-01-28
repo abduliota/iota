@@ -32,12 +32,7 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
   };
 
   return (
-    <div className="w-64 border-r border-gray-800 bg-[#0a0a0a] flex flex-col transition-colors duration-200">
-      <div className="p-4 border-b border-gray-800">
-        <Button onClick={handleNewChat} className="w-full">
-          + New Chat
-        </Button>
-      </div>
+    <div className="flex flex-col h-full transition-colors duration-200">
       <ScrollArea className="flex-1 p-2">
         <div className="space-y-2">
           {chats.map((chat) => (
