@@ -57,7 +57,7 @@ def get_db_connection():
 def load_model():
     global model, tokenizer
     if model is None:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.eos_token
         base_model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
