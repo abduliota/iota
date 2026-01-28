@@ -148,7 +148,7 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     
     messages = [
         {"role": "system", "content": "You are a helpful assistant for KSA regulatory compliance. Answer based on the provided context."},
-        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"},
+        {"role": "user", "content": f"Question: {query}\n\nContext:\n{context}"},
     ]
     
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -168,7 +168,10 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
             do_sample=False,
         )
     
-    output = tokenizer.decode(gen[0], skip_special_tokens=True)
+    # Decode only newly generated tokens (avoid echoing prompt/system text)
+    prompt_len = enc["input_ids"].shape[1]
+    generated_ids = gen[0][prompt_len:]
+    output = tokenizer.decode(generated_ids, skip_special_tokens=True)
     return extract_assistant_response(output)
 
 
