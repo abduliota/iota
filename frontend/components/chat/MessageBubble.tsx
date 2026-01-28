@@ -13,7 +13,6 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const isSystem = message.role === 'system';
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(message.content);
@@ -30,16 +29,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-
-  if (isSystem) {
-    return (
-      <div className="flex justify-center my-3">
-        <span className="text-[11px] text-muted-foreground text-center">
-          {message.content}
-        </span>
-      </div>
-    );
-  }
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
