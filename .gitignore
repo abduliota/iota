@@ -113,6 +113,7 @@ backend/downloads/
 !package-lock.json
 !tsconfig.json
 !next-env.d.ts
+!backend/models/**/adapter_config.json
 *.parquet
 *.h5
 *.hdf5
