@@ -63,7 +63,6 @@ def load_model():
             MODEL_NAME,
             torch_dtype=torch.float16,
             device_map="auto",
-            load_in_4bit=True,
         )
         model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
         model.config.pad_token_id = tokenizer.pad_token_id
