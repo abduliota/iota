@@ -6,7 +6,7 @@ print("Checking Tesseract installation...\n")
 # Use PyMuPDF's built-in detection
 tessdata = fitz.get_tessdata()
 
-if tessdata:
+if tessdata: 
     print(f"✓ Tesseract found!")
     print(f"  Tessdata folder: {tessdata}")
     print(f"  Installation: {os.path.dirname(tessdata)}")

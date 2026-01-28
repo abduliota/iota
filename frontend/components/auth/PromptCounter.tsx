@@ -21,7 +21,7 @@ export function PromptCounter({ remaining, total, isAuthenticated }: PromptCount
   const isWarning = remaining <= 2;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center justify-center gap-2">
       <div className="text-xs text-gray-400">
         {remaining}/{total} prompts
       </div>
