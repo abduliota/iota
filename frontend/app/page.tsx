@@ -75,11 +75,17 @@ export default function Home() {
     saveChat(chat);
   };
 
-  const allReferences = currentChat?.messages
-    .flatMap(msg => msg.references || [])
-    .filter((ref, index, self) => 
-      index === self.findIndex(r => r.id === ref.id)
-    ) || [];
+  const latestAssistantWithRefs = currentChat?.messages
+    ?.slice()
+    .reverse()
+    .find(
+      (msg) =>
+        msg.role === 'assistant' &&
+        msg.references &&
+        msg.references.length > 0
+    );
+
+  const latestReferences = latestAssistantWithRefs?.references || [];
 
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
@@ -195,7 +201,7 @@ export default function Home() {
                 />
               )}
             </div>
-            {allReferences.length > 0 && (
+            {latestReferences.length > 0 && (
               <button
                 onClick={() => setShowSources(!showSources)}
                 className="absolute top-4 right-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
@@ -204,7 +210,7 @@ export default function Home() {
               </button>
             )}
             <SourcePanel 
-              sources={allReferences}
+              sources={latestReferences}
               isOpen={showSources}
               onClose={() => setShowSources(false)}
             />

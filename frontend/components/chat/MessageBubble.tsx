@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Message } from '@/lib/types';
 import { References } from './References';
@@ -13,6 +13,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const [showSources, setShowSources] = useState(false);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(message.content);
@@ -48,7 +49,33 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <div className="prose prose-sm max-w-none prose-invert prose-pre:bg-transparent prose-pre:p-0 prose-code:text-xs">
               <ReactMarkdown>{message.content}</ReactMarkdown>
             </div>
-            {message.references && (
+            {message.references && message.references.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                    !showSources
+                      ? 'bg-muted text-foreground border-border'
+                      : 'bg-background text-foreground border-border'
+                  }`}
+                  onClick={() => setShowSources(false)}
+                >
+                  Answer
+                </button>
+                <button
+                  type="button"
+                  className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                    showSources
+                      ? 'bg-muted text-foreground border-border'
+                      : 'bg-background text-foreground border-border'
+                  }`}
+                  onClick={() => setShowSources(true)}
+                >
+                  Sources ({message.references.length})
+                </button>
+              </div>
+            )}
+            {showSources && message.references && message.references.length > 0 && (
               <div className="mt-3">
                 <References references={message.references} />
               </div>
