@@ -146,6 +146,50 @@ def strip_chunk_metadata(text: str) -> str:
     return parts[1] if len(parts) == 2 else text
 
 
+def is_explanation_query(query: str) -> bool:
+    """Simple check for 'explain / overview' style questions."""
+    q = query.lower()
+    keywords = [
+        "explain ",
+        "overview",
+        "in simple terms",
+        "high level",
+        "summary of",
+    ]
+    return any(k in q for k in keywords)
+
+
+def is_glossary_section(heading) -> bool:
+    """Detect basic glossary / definition headings."""
+    if not heading:
+        return False
+    h = str(heading).lower()
+    return ("glossary" in h) or ("definition" in h)
+
+
+def clean_response_text(text: str, max_bullets: int = 5) -> str:
+    """Remove duplicate lines and cap number of bullet points."""
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    seen = set()
+    cleaned = []
+    bullet_count = 0
+
+    for line in lines:
+        key = line.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if line.lstrip().startswith(("-", "*")):
+            if bullet_count >= max_bullets:
+                continue
+            bullet_count += 1
+
+        cleaned.append(line)
+
+    return "\n".join(cleaned)
+
+
 def generate_response(query: str, chunks: List[Dict]) -> str:
     model, tokenizer = load_model()
 
@@ -155,16 +199,35 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
         for prefix in ["what are", "list", "which are", "what are the"]
     )
 
+    is_explain = is_explanation_query(query)
+
     extra_instruction = ""
     if is_list_query:
-        extra_instruction = (
+        extra_instruction += (
             "- If the question asks to 'list' items, respond with a concise bullet "
             "list of names with at most one short phrase of explanation each.\n"
         )
 
+    if is_explain:
+        extra_instruction += (
+            "- If the user asks you to explain or give an overview, write in your own words "
+            "instead of copying glossary-style definitions.\n"
+            "- Start with 1–2 short sentences that summarize the main idea.\n"
+            "- Then provide 3–5 bullets focusing on concrete obligations, actions, or takeaways.\n"
+            "- Avoid dictionary-style phrasing like 'X is the process of identifying, assessing...'.\n"
+        )
+
+    used_chunks = chunks
+    if is_explain:
+        non_glossary_chunks = [
+            c for c in chunks if not is_glossary_section(c.get("section_heading"))
+        ]
+        if non_glossary_chunks:
+            used_chunks = non_glossary_chunks
+
     context = "\n\n".join(
         f"[{i+1}] {strip_chunk_metadata(chunk['text'])[:1000]}"
-        for i, chunk in enumerate(chunks)
+        for i, chunk in enumerate(used_chunks)
     )
 
     system_content = (
@@ -177,6 +240,15 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
         + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
         + "- Do NOT repeat the same sentence or phrase.\n"
         + "- Do NOT mention document IDs, page numbers, or chunk indices.\n"
+        + "\n"
+        + "Bad example (to avoid):\n"
+        + "- Risk management is the process of identifying, assessing, prioritizing, and taking action to accept, "
+          "transfer, mitigate, or eliminate risks. (repeated or copied from glossary)\n"
+        + "Good example (preferred style):\n"
+        + "- Cyber risk laws require the board and senior management to ensure that cyber risks are identified, "
+          "assessed, and regularly reviewed.\n"
+        + "- They must approve and oversee cyber security policies, allocate sufficient resources, and monitor key "
+          "cyber risk indicators.\n"
     )
 
     messages = [
@@ -205,7 +277,8 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     prompt_len = enc["input_ids"].shape[1]
     generated_ids = gen[0][prompt_len:]
     output = tokenizer.decode(generated_ids, skip_special_tokens=True)
-    return extract_assistant_response(output)
+    raw_text = extract_assistant_response(output)
+    return clean_response_text(raw_text)
 
 
 class ChatRequest(BaseModel):
