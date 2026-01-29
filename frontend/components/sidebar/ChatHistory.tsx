@@ -16,8 +16,8 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
   const [chats, setChats] = useState<Chat[]>([]);
 
   useEffect(() => {
-    setChats(getChats());
-  }, []);
+    setChats(getChats().sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()));
+  }, [selectedChatId]);
 
   const handleNewChat = () => {
     onSelectChat(null);
@@ -25,7 +25,7 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
 
   const handleDelete = (chatId: string) => {
     deleteChat(chatId);
-    setChats(getChats());
+    setChats(getChats().sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()));
     if (selectedChatId === chatId) {
       onSelectChat(null);
     }

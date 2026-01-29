@@ -167,22 +167,46 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
                   <p className="text-xs sm:text-sm text-muted-foreground mb-4">
                     Get clear, grounded answers on Saudi regulatory frameworks, requirements, and compliance workflows.
                   </p>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="flex flex-col gap-2">
                     <button
                       onClick={() =>
-                        handleSend('What are the key KSA regulatory requirements for fintech startups?')
+                        handleSend('Explain the cyber risk laws and governance requirements in KSA')
                       }
-                      className="w-full sm:w-auto px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
+                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
                     >
-                      KSA fintech regulatory overview
+                      Cyber risk laws
                     </button>
                     <button
                       onClick={() =>
-                        handleSend('Summarize the main AML and CTF requirements in KSA.')
+                        handleSend('What are the key remuneration and compensation regulations in KSA?')
                       }
-                      className="w-full sm:w-auto px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border/70 bg-muted/40 hover:bg-muted/70 transition-colors"
+                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
                     >
-                      AML / CTF summary
+                      Remuneration laws
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleSend('What are the regulatory requirements for money exchange businesses in KSA?')
+                      }
+                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
+                    >
+                      Money exchange sector
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleSend('Explain the counter fraud requirements and controls in KSA')
+                      }
+                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
+                    >
+                      Counter fraud
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleSend('What are the cyber security governance and risk management requirements in KSA?')
+                      }
+                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
+                    >
+                      Cyber security governance
                     </button>
                   </div>
                 </div>
