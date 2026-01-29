@@ -6,7 +6,6 @@ import { Chat, Message } from '@/lib/types';
 import { getChat, saveChat } from '@/lib/storage';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ChatHistory } from '@/components/sidebar/ChatHistory';
-import { SourcePanel } from '@/components/chat/SourcePanel';
 import { usePromptLimit } from '@/hooks/usePromptLimit';
 import { useFingerprintAuth } from '@/hooks/useFingerprintAuth';
 import { PromptCounter } from '@/components/auth/PromptCounter';
@@ -17,7 +16,6 @@ import { Menu } from 'lucide-react';
 export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
-  const [showSources, setShowSources] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { remainingPrompts, canSend, incrementPrompt, resetPrompts } = usePromptLimit();
@@ -74,18 +72,6 @@ export default function Home() {
 
     saveChat(chat);
   };
-
-  const latestAssistantWithRefs = currentChat?.messages
-    ?.slice()
-    .reverse()
-    .find(
-      (msg) =>
-        msg.role === 'assistant' &&
-        msg.references &&
-        msg.references.length > 0
-    );
-
-  const latestReferences = latestAssistantWithRefs?.references || [];
 
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
@@ -201,19 +187,6 @@ export default function Home() {
                 />
               )}
             </div>
-            {latestReferences.length > 0 && (
-              <button
-                onClick={() => setShowSources(!showSources)}
-                className="absolute top-4 right-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 shadow-md hover:shadow-lg hover:shadow-blue-500/30 z-10 transition-all duration-200 transform hover:scale-105 active:scale-95"
-              >
-                {showSources ? 'Hide' : 'Show'} Sources
-              </button>
-            )}
-            <SourcePanel 
-              sources={latestReferences}
-              isOpen={showSources}
-              onClose={() => setShowSources(false)}
-            />
           </div>
         </div>
 

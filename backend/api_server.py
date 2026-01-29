@@ -141,10 +141,18 @@ def extract_assistant_response(full_output: str) -> str:
     return full_output.strip()
 
 
+def strip_chunk_metadata(text: str) -> str:
+    parts = text.split("\n\n", 1)
+    return parts[1] if len(parts) == 2 else text
+
+
 def generate_response(query: str, chunks: List[Dict]) -> str:
     model, tokenizer = load_model()
     
-    context = "\n\n".join([f"[{i+1}] {chunk['text']}" for i, chunk in enumerate(chunks)])
+    context = "\n\n".join(
+        f"[{i+1}] {strip_chunk_metadata(chunk['text'])}"
+        for i, chunk in enumerate(chunks)
+    )
     
     messages = [
         {"role": "system", "content": "You are a helpful assistant for KSA regulatory compliance. Answer based on the provided context."},
@@ -203,15 +211,18 @@ async def chat(request: ChatRequest):
     query_embedding = generate_query_embedding(query)
     chunks = search_chunks(query_embedding, top_k=5)
     
-    references = [
-        {
-            "id": chunk["id"],
-            "source": chunk["filename"],
-            "page": chunk.get("chunk_index", 0),
-            "snippet": chunk["text"][:200] + "..." if len(chunk["text"]) > 200 else chunk["text"]
-        }
-        for chunk in chunks
-    ]
+    references: List[Dict] = []
+    for chunk in chunks:
+        clean_text = strip_chunk_metadata(chunk["text"])
+        snippet = clean_text[:200] + "..." if len(clean_text) > 200 else clean_text
+        references.append(
+            {
+                "id": chunk["id"],
+                "source": chunk["filename"],
+                "page": chunk.get("chunk_index", 0),
+                "snippet": snippet,
+            }
+        )
     
     return StreamingResponse(
         stream_response(query, chunks, references),
