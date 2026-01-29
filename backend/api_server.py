@@ -167,7 +167,7 @@ def is_glossary_section(heading) -> bool:
     return ("glossary" in h) or ("definition" in h)
 
 
-def clean_response_text(text: str, max_bullets: int = 5) -> str:
+def clean_response_text(text: str, max_bullets: int = 10) -> str:
     """Remove duplicate lines and cap number of bullet points."""
     lines = [line.rstrip() for line in text.splitlines() if line.strip()]
     seen = set()
@@ -234,7 +234,7 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
         "You are a helpful assistant for KSA regulatory compliance.\n\n"
         + extra_instruction
         + "- Always answer in clear English.\n"
-        + "- Respond in at most 5 short bullet points.\n"
+        + "- Respond with 5-10 bullet points.\n"
         + "- Each bullet should be 1–2 short sentences.\n"
         + "- Focus only on the main regulatory requirements or rules relevant to the question.\n"
         + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
@@ -268,7 +268,7 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     with torch.no_grad():
         gen = model.generate(
             **enc,
-            max_new_tokens=256,
+            max_new_tokens=384,
             temperature=0.3,
             do_sample=False,
         )
@@ -288,20 +288,10 @@ class ChatRequest(BaseModel):
 async def stream_response(query: str, chunks: List[Dict], references: List[Dict]):
     response_text = generate_response(query, chunks)
     
-    words = response_text.split()
-    buffer: List[str] = []
-    CHUNK_SIZE = 8  # number of words per streamed chunk
-
-    for word in words:
-        buffer.append(word)
-        if len(buffer) >= CHUNK_SIZE:
-            chunk_text = " ".join(buffer)
-            data = json.dumps({"type": "token", "content": chunk_text})
-            yield f"data: {data}\n\n"
-            buffer = []
-
-    if buffer:
-        chunk_text = " ".join(buffer)
+    CHUNK_SIZE = 80  # characters per streamed chunk
+    
+    for i in range(0, len(response_text), CHUNK_SIZE):
+        chunk_text = response_text[i:i+CHUNK_SIZE]
         data = json.dumps({"type": "token", "content": chunk_text})
         yield f"data: {data}\n\n"
     
