@@ -163,7 +163,7 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
         )
 
     context = "\n\n".join(
-        f"[{i+1}] {strip_chunk_metadata(chunk['text'])}"
+        f"[{i+1}] {strip_chunk_metadata(chunk['text'])[:1000]}"
         for i, chunk in enumerate(chunks)
     )
 
@@ -215,12 +215,22 @@ class ChatRequest(BaseModel):
 async def stream_response(query: str, chunks: List[Dict], references: List[Dict]):
     response_text = generate_response(query, chunks)
     
-    words = response_text.split(' ')
-    for i, word in enumerate(words):
-        chunk = word if i == 0 else ' ' + word
-        data = json.dumps({"type": "token", "content": chunk})
+    words = response_text.split()
+    buffer: List[str] = []
+    CHUNK_SIZE = 8  # number of words per streamed chunk
+
+    for word in words:
+        buffer.append(word)
+        if len(buffer) >= CHUNK_SIZE:
+            chunk_text = " ".join(buffer)
+            data = json.dumps({"type": "token", "content": chunk_text})
+            yield f"data: {data}\n\n"
+            buffer = []
+
+    if buffer:
+        chunk_text = " ".join(buffer)
+        data = json.dumps({"type": "token", "content": chunk_text})
         yield f"data: {data}\n\n"
-        await asyncio.sleep(0.03)
     
     final_data = json.dumps({
         "type": "done",
