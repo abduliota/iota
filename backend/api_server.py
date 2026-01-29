@@ -155,7 +155,16 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     )
     
     messages = [
-        {"role": "system", "content": "You are a helpful assistant for KSA regulatory compliance. Answer based on the provided context."},
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant for KSA regulatory compliance. "
+                "Answer only in clear English. Summarize the key points relevant "
+                "to the user's question in a few short bullet points. Do not copy "
+                "long passages verbatim from the context and do not include "
+                "markers like [Document:], [Section:], [Chunk Index:] or page numbers."
+            ),
+        },
         {"role": "user", "content": f"Question: {query}\n\nContext:\n{context}"},
     ]
     

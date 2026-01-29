@@ -150,12 +150,6 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
                 >
                   Answer
                 </TabsTrigger>
-                <TabsTrigger
-                  value="links"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground rounded-full px-3 py-1 text-xs"
-                >
-                  Links
-                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
