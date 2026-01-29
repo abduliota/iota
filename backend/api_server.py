@@ -148,23 +148,39 @@ def strip_chunk_metadata(text: str) -> str:
 
 def generate_response(query: str, chunks: List[Dict]) -> str:
     model, tokenizer = load_model()
-    
+
+    lower_query = query.lower()
+    is_list_query = any(
+        lower_query.startswith(prefix)
+        for prefix in ["what are", "list", "which are", "what are the"]
+    )
+
+    extra_instruction = ""
+    if is_list_query:
+        extra_instruction = (
+            "- If the question asks to 'list' items, respond with a concise bullet "
+            "list of names with at most one short phrase of explanation each.\n"
+        )
+
     context = "\n\n".join(
         f"[{i+1}] {strip_chunk_metadata(chunk['text'])}"
         for i, chunk in enumerate(chunks)
     )
-    
+
+    system_content = (
+        "You are a helpful assistant for KSA regulatory compliance.\n\n"
+        + extra_instruction
+        + "- Always answer in clear English.\n"
+        + "- Respond in at most 5 short bullet points.\n"
+        + "- Each bullet should be 1–2 short sentences.\n"
+        + "- Focus only on the main regulatory requirements or rules relevant to the question.\n"
+        + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
+        + "- Do NOT repeat the same sentence or phrase.\n"
+        + "- Do NOT mention document IDs, page numbers, or chunk indices.\n"
+    )
+
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant for KSA regulatory compliance. "
-                "Answer only in clear English. Summarize the key points relevant "
-                "to the user's question in a few short bullet points. Do not copy "
-                "long passages verbatim from the context and do not include "
-                "markers like [Document:], [Section:], [Chunk Index:] or page numbers."
-            ),
-        },
+        {"role": "system", "content": system_content},
         {"role": "user", "content": f"Question: {query}\n\nContext:\n{context}"},
     ]
     
@@ -180,7 +196,7 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     with torch.no_grad():
         gen = model.generate(
             **enc,
-            max_new_tokens=512,
+            max_new_tokens=256,
             temperature=0.3,
             do_sample=False,
         )
