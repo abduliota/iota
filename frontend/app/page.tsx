@@ -158,7 +158,7 @@ export default function Home() {
         )}
 
         {/* Centered chat content */}
-        <div className="flex-1 flex flex-col items-center">
+        <div className="flex-1 min-h-0 flex flex-col items-center overflow-hidden">
           <div className="hidden md:flex w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl px-2 sm:px-4 lg:px-6 justify-end py-2">
             <Button
               size="sm"
@@ -169,7 +169,7 @@ export default function Home() {
               + New chat
             </Button>
           </div>
-          <div className="flex-1 w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl px-2 sm:px-4 lg:px-6 flex relative">
+          <div className="flex-1 min-h-0 w-full max-w-3xl lg:max-w-4xl xl-max-w-5xl px-2 sm:px-4 lg:px-6 flex relative">
             <div className="flex-1">
               {currentChat ? (
                 <ChatInterface 
