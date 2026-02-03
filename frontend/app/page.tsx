@@ -165,8 +165,8 @@ export default function Home() {
         )}
 
         {/* Regulation AI dashboard: summary card + two-column chat/sources */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-auto">
-          <div className="mx-auto w-full max-w-[1200px] px-4 py-4 md:px-6 md:py-6">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="mx-auto w-full max-w-[1200px] flex flex-1 min-h-0 flex-col px-4 py-4 md:px-6 md:py-6">
             <SummaryCard
               rightSlot={
                 <PromptCounter
@@ -177,7 +177,7 @@ export default function Home() {
               }
             />
             <div className="mt-6 flex flex-1 min-h-0 gap-4 md:gap-6">
-              <div className="flex-1 min-w-0 flex flex-col rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex-1 min-h-0 min-w-0 flex flex-col rounded-xl border border-border bg-card shadow-sm">
                 {currentChat ? (
                   <ChatInterface
                     messages={currentChat.messages}
