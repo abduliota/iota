@@ -1,22 +1,7 @@
 'use client';
 
 import React from 'react';
-
-function ThemeToggle() {
-  const toggle = () => {
-    document.documentElement.classList.toggle('dark');
-  };
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-      aria-label="Toggle light/dark mode"
-    >
-      Theme
-    </button>
-  );
-}
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 export function SummaryCard() {
   return (

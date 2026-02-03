@@ -13,6 +13,7 @@ import { useFingerprintAuth } from '@/hooks/useFingerprintAuth';
 import { PromptCounter } from '@/components/auth/PromptCounter';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Menu } from 'lucide-react';
 
 export default function Home() {
@@ -22,10 +23,6 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { remainingPrompts, canSend, incrementPrompt, resetPrompts } = usePromptLimit();
   const { isAuthenticated, register, login, logout } = useFingerprintAuth();
-
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -81,22 +78,26 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
-      {/* Prompt counter pinned to top center */}
-      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-30">
+      {/* Desktop: status badge + theme toggle (top center) */}
+      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-30 items-center gap-2">
         <PromptCounter
           remaining={remainingPrompts}
           total={10}
           isAuthenticated={isAuthenticated}
         />
+        <ThemeToggle />
       </div>
 
       {/* Desktop sidebar - ChatGPT style, 260px */}
       <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 border-r border-border bg-sidebar-bg transition-[background-color] duration-200">
-        <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
-          <img src="/logo.jpeg" alt="IOTA Technologies" className="h-8 w-8 rounded" />
-          <span className="text-sm font-medium text-foreground truncate">
-            IOTA Technologies
-          </span>
+        <div className="flex items-center justify-between gap-2.5 px-3 py-3 border-b border-border">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-10 w-10 shrink-0 rounded-lg" />
+            <span className="truncate text-[15px] font-medium text-foreground">
+              IOTA Technologies
+            </span>
+          </div>
+          <ThemeToggle />
         </div>
         <ChatHistory
           selectedChatId={selectedChatId}
@@ -106,33 +107,34 @@ export default function Home() {
 
       {/* Main area */}
       <main className="flex-1 flex flex-col">
-        {/* Mobile header with menu button */}
-        <header className="flex items-center justify-between px-3 py-2 border-b border-border md:hidden bg-background/80 backdrop-blur-sm">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="rounded-full"
-            aria-label="Open chat history"
-            onClick={() => setIsSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div className="flex items-center gap-2">
-            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-6 w-6" />
-            <span className="text-sm font-medium text-muted-foreground">
+        {/* Mobile header: left menu+logo+name, right badge+toggle+new chat */}
+        <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border md:hidden bg-background/95 backdrop-blur-sm transition-colors duration-200">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9 shrink-0 rounded-full"
+              aria-label="Open chat history"
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-10 w-10 shrink-0 rounded-lg" />
+            <span className="truncate text-[15px] font-medium text-foreground">
               IOTA Technologies
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <PromptCounter
               remaining={remainingPrompts}
               total={10}
               isAuthenticated={isAuthenticated}
             />
+            <ThemeToggle />
             <Button
               size="icon"
               variant="outline"
-              className="h-7 w-7 rounded-full"
+              className="h-8 w-8 rounded-full"
               aria-label="Start new chat"
               onClick={() => setSelectedChatId(null)}
             >
