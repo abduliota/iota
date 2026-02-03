@@ -80,11 +80,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 <References references={message.references} />
               </div>
             )}
-            {message.usage != null && message.usage.input_tokens != null && message.usage.output_tokens != null && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {message.usage.input_tokens.toLocaleString()} in / {message.usage.output_tokens.toLocaleString()} out
-              </div>
-            )}
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Button
                 variant="ghost"
