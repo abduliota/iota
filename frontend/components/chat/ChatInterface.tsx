@@ -138,7 +138,10 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
               Conversation
             </span>
             <span className="text-sm font-medium text-foreground">
-              KSA Regulatory Assistant
+              Assistant
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Responses cite the retrieved passages.
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -161,10 +164,10 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
             {allMessages.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <div className="max-w-md w-full rounded-2xl border border-border/60 bg-muted/40 px-5 py-6 text-left shadow-sm">
-                  <h2 className="text-base sm:text-lg font-semibold text-foreground mb-2">
-                    Ask KSA regulatory questions
-                  </h2>
-                  <p className="text-xs sm:text-sm text-muted-foreground mb-4">
+                  <p className="text-sm text-muted-foreground text-center">
+                    No messages yet. Ask your first question.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2 mb-4 text-center">
                     Get clear, grounded answers on Saudi regulatory frameworks, requirements, and compliance workflows.
                   </p>
                   <div className="flex flex-col gap-2">
