@@ -194,7 +194,7 @@ export default function Home() {
                   />
                 )}
               </div>
-              <div className="hidden lg:block w-80 shrink-0">
+              <div className="hidden lg:flex lg:flex-col w-80 shrink-0 min-h-0">
                 <LatestSourcesPanel references={latestRefs} />
               </div>
             </div>
