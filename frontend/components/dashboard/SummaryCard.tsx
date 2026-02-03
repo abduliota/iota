@@ -28,31 +28,14 @@ export function SummaryCard() {
           Live · API healthy
         </span>
         <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-          Azure Search
+          IOTA-Qwen7B
+        </span>
+        <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+          Multi-Agent Architecture
         </span>
         <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
           RAG
         </span>
-      </div>
-      <div className="mt-6 grid grid-cols-3 gap-4 border-t border-border pt-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Docs Ingested
-          </p>
-          <p className="mt-1 text-xl font-semibold text-foreground">9</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Chunks
-          </p>
-          <p className="mt-1 text-xl font-semibold text-foreground">884</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Q&A Pairs
-          </p>
-          <p className="mt-1 text-xl font-semibold text-foreground">0</p>
-        </div>
       </div>
     </div>
   );
