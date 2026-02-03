@@ -180,6 +180,7 @@ export default function Home() {
               <div className="flex-1 min-h-0 min-w-0 flex flex-col rounded-xl border border-border bg-card shadow-sm">
                 {currentChat ? (
                   <ChatInterface
+                    key={currentChat.id}
                     messages={currentChat.messages}
                     onNewMessage={handleNewMessage}
                     canSend={isAuthenticated || canSend}
@@ -187,6 +188,7 @@ export default function Home() {
                   />
                 ) : (
                   <ChatInterface
+                    key="new"
                     messages={[]}
                     onNewMessage={handleNewMessage}
                     canSend={isAuthenticated || canSend}

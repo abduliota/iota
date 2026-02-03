@@ -1,6 +1,7 @@
 import os
+import re
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -41,6 +42,21 @@ PGPORT = os.environ.get("PGPORT", "5432")
 model = None
 tokenizer = None
 embedding_client = None
+
+# Config
+RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.5"))
+GREETING_PATTERNS = [
+    "hi", "hello", "hey", "thanks", "thank you", "ok", "okay", "bye", "goodbye",
+    "مرحبا", "السلام عليكم", "شكرا", "مع السلامة",
+]
+ACRONYM_REWRITES = {
+    "sama": "What is the Saudi Arabian Monetary Authority and what does it regulate?",
+    "cma": "What is the Capital Market Authority in Saudi Arabia?",
+    "ksa": "What are KSA financial regulations?",
+}
+FOLLOW_UP_PATTERNS = [
+    "explain more", "tell me more", "go on", "continue", "what about that", "elaborate", "and?", "more detail",
+]
 
 
 def get_db_connection():
@@ -89,13 +105,41 @@ def generate_query_embedding(query: str) -> List[float]:
     return response.data[0].embedding
 
 
-def search_chunks(query_embedding: List[float], top_k: int = 5) -> List[Dict]:
+def detect_language(text: str) -> str:
+    """Detect language from query: Arabic script -> 'ar', else 'en'."""
+    if not text or not text.strip():
+        return "en"
+    arabic_pattern = re.compile(r"[\u0600-\u06FF]")
+    if arabic_pattern.search(text):
+        return "ar"
+    return "en"
+
+
+def search_chunks(
+    query_embedding: List[float],
+    top_k: int = 5,
+    filters: Optional[Dict[str, str]] = None,
+) -> List[Dict]:
     conn = get_db_connection()
     cur = conn.cursor()
-    
     embedding_str = str(query_embedding)
-    
-    cur.execute("""
+    filters = filters or {}
+
+    where_parts = ["c.embedding IS NOT NULL"]
+    params: List[Any] = []
+
+    use_regulator = bool(filters.get("regulator"))
+    if filters.get("language"):
+        where_parts.append("c.language = %s")
+        params.append(filters["language"])
+    if use_regulator:
+        where_parts.append("d.regulator = %s")
+        params.append(filters["regulator"])
+
+    where_sql = " AND ".join(where_parts)
+    params.extend([embedding_str, embedding_str, top_k])
+
+    sql = f"""
         SELECT 
             c.id,
             c.text,
@@ -106,11 +150,20 @@ def search_chunks(query_embedding: List[float], top_k: int = 5) -> List[Dict]:
             1 - (c.embedding <=> %s::vector) as similarity
         FROM chunks c
         JOIN documents d ON c.document_id = d.id
-        WHERE c.embedding IS NOT NULL
+        WHERE {where_sql}
         ORDER BY c.embedding <=> %s::vector
         LIMIT %s
-    """, (embedding_str, embedding_str, top_k))
-    
+    """
+    try:
+        cur.execute(sql, params)
+    except psycopg2.ProgrammingError as e:
+        if "regulator" in str(e) and "does not exist" in str(e).lower():
+            filters_no_reg = {k: v for k, v in filters.items() if k != "regulator"}
+            cur.close()
+            conn.close()
+            return search_chunks(query_embedding, top_k, filters_no_reg)
+        raise
+
     results = []
     for row in cur.fetchall():
         results.append({
@@ -122,7 +175,7 @@ def search_chunks(query_embedding: List[float], top_k: int = 5) -> List[Dict]:
             "page_title": row[5],
             "similarity": float(row[6]),
         })
-    
+
     cur.close()
     conn.close()
     return results
@@ -168,35 +221,115 @@ def is_glossary_section(heading) -> bool:
 
 
 # --- Planner (rule-based, predictable) ---
-def planner_plan(user_query: str) -> Dict[str, Any]:
-    """Planner Agent: decide intent, language, answer style, retrieval size, refinement."""
+def planner_plan(
+    user_query: str,
+    conversation_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Planner Agent: decide intent, language, need_retrieval, answer style, retrieval size."""
+    state = conversation_state or {}
     q = user_query.strip().lower()
-    # Language: default English; detect Arabic by script or common words
-    response_language = "en"
-    if any("\u0600" <= c <= "\u06FF" for c in user_query):
-        response_language = "ar"
-    # Intent
-    if any(x in q for x in ["explain", "overview", "what is", "what are", "how does", "why"]):
-        query_intent = "explanation"
-    elif any(x in q for x in ["list", "which are", "name the", "what are the"]):
-        query_intent = "list"
-    elif any(x in q for x in ["how to", "steps", "procedure", "process"]):
-        query_intent = "procedural"
-    else:
-        query_intent = "general"
-    # Answer style: conversational for explanation, structured for list
+    raw = user_query.strip()
+
+    # Language: from state or detect
+    response_language = state.get("language") or detect_language(user_query)
+
+    # Greeting / chitchat first -> skip RAG
+    need_retrieval = True
+    query_intent = "general"
+    for g in GREETING_PATTERNS:
+        if raw.lower() == g or (len(raw.split()) <= 2 and g in q):
+            need_retrieval = False
+            if any(x in q for x in ["bye", "goodbye", "مع السلامة"]):
+                query_intent = "goodbye"
+            elif any(x in q for x in ["thanks", "thank you", "شكرا"]):
+                query_intent = "acknowledgment"
+            else:
+                query_intent = "greeting"
+            break
+
+    if need_retrieval:
+        if any(x in q for x in ["explain", "overview", "what is", "what are", "how does", "why"]):
+            query_intent = "explanation"
+        elif any(x in q for x in ["list", "which are", "name the", "what are the"]):
+            query_intent = "list"
+        elif any(x in q for x in ["how to", "steps", "procedure", "process"]):
+            query_intent = "procedural"
+
     answer_style = "conversational" if query_intent == "explanation" else "structured"
-    # Retrieval: more chunks for complex/explanation
     top_k = 8 if query_intent == "explanation" else 5
-    # Refinement: off by default for latency; set True for explanation if needed
     use_refiner = False
+
+    # Updated state fields for response
+    updated_state = {
+        "language": response_language,
+        "last_intent": query_intent,
+        "last_query": raw if need_retrieval else state.get("last_query"),
+        "active_topic": state.get("active_topic"),
+        "active_regulator": state.get("active_regulator"),
+    }
+    if need_retrieval and raw:
+        updated_state["last_query"] = raw
+        if "sama" in q or "ساما" in user_query:
+            updated_state["active_regulator"] = "SAMA"
+        if "cma" in q or "cma" in user_query:
+            updated_state["active_regulator"] = "CMA"
+        if query_intent == "explanation" or query_intent == "list":
+            updated_state["active_topic"] = raw[:80] if len(raw) > 10 else (state.get("active_topic") or raw[:80])
+
     return {
         "response_language": response_language,
         "query_intent": query_intent,
+        "need_retrieval": need_retrieval,
         "answer_style": answer_style,
         "top_k": top_k,
         "use_refiner": use_refiner,
+        "updated_state": updated_state,
     }
+
+
+def rewrite_query(
+    query: str,
+    plan: Dict[str, Any],
+    conversation_state: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Rewrite user query into explicit regulatory search query."""
+    state = conversation_state or {}
+    q = query.strip().lower()
+
+    # Follow-up patterns: use state context
+    for pat in FOLLOW_UP_PATTERNS:
+        if pat in q or (len(q.split()) <= 3 and q in ["more", "detail", "and"]):
+            if state.get("active_topic"):
+                return f"{state['active_topic']} - detailed explanation"
+            if state.get("last_query"):
+                return state["last_query"]
+            break
+
+    # Acronym / abbreviation rewrites
+    for acronym, rewritten in ACRONYM_REWRITES.items():
+        if acronym in q and ("what" in q or "explain" in q or "define" in q or "mean" in q):
+            return rewritten
+
+    # Vague query + state context
+    if state.get("active_regulator") and len(q.split()) <= 4:
+        return f"{state['active_regulator']}: {query.strip()}"
+    if state.get("active_topic") and q in ["requirements", "rules", "what"]:
+        return f"{state['active_topic']} {query.strip()}"
+
+    return query.strip()
+
+
+def generate_clarification_message(query: str, state: Dict[str, Any]) -> str:
+    """Return a clarification prompt when retrieval is low relevance."""
+    if state.get("active_topic"):
+        return (
+            f"I couldn't find specific information about that. "
+            f"Are you asking about {state['active_topic']}, or something else? Could you rephrase your question?"
+        )
+    return (
+        "I couldn't find relevant information for your query. "
+        "Could you please rephrase or provide more details? I can help with SAMA, CMA, and other KSA regulatory questions."
+    )
 
 
 # --- Reranker: relevance + diversity, limit N ---
@@ -277,10 +410,15 @@ GENERATOR_SYSTEM = (
     "and that policies and resources are in place to manage them.'\n"
 )
 
-def generate_response(query: str, chunks: List[Dict], plan: Any = None) -> str:
+def generate_response(
+    query: str,
+    chunks: List[Dict],
+    plan: Any = None,
+    conversation_state: Optional[Dict[str, Any]] = None,
+) -> str:
     """Generator Agent: produce conversational answer from retrieved chunks only."""
     model, tokenizer = load_model()
-    plan = plan or planner_plan(query)
+    plan = plan or planner_plan(query, conversation_state)
     intent = plan.get("query_intent", "general")
     answer_style = plan.get("answer_style", "conversational")
     lang = plan.get("response_language", "en")
@@ -325,26 +463,91 @@ def generate_response(query: str, chunks: List[Dict], plan: Any = None) -> str:
     return clean_response_text(raw_text)
 
 
+class ConversationStateModel(BaseModel):
+    active_topic: Optional[str] = None
+    active_regulator: Optional[str] = None
+    active_domain: Optional[str] = None
+    language: Optional[str] = None
+    last_intent: Optional[str] = None
+    last_query: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     message: str
+    conversation_state: Optional[ConversationStateModel] = None
 
 
-async def stream_response(response_text: str, references: List[Dict]):
+def _state_to_dict(s: Optional[ConversationStateModel]) -> Dict[str, Any]:
+    if s is None:
+        return {}
+    return {k: v for k, v in s.model_dump().items() if v is not None}
+
+
+async def stream_response(
+    response_text: str,
+    references: List[Dict],
+    conversation_state: Optional[Dict[str, Any]] = None,
+):
     CHUNK_SIZE = 80
     for i in range(0, len(response_text), CHUNK_SIZE):
         chunk_text = response_text[i : i + CHUNK_SIZE]
         data = json.dumps({"type": "token", "content": chunk_text})
         yield f"data: {data}\n\n"
-    final_data = json.dumps({"type": "done", "references": references})
+    final_data = json.dumps({
+        "type": "done",
+        "references": references,
+        "conversation_state": conversation_state or {},
+    })
     yield f"data: {final_data}\n\n"
 
 
-# Orchestrator: planner → retrieval → reranker → generator → (optional) critic
-def run_agent_pipeline(query: str) -> tuple[str, List[Dict]]:
-    plan = planner_plan(query)
-    query_embedding = generate_query_embedding(query)
-    chunks = search_chunks(query_embedding, top_k=plan["top_k"])
+# Orchestrator: planner → (optional retrieval) → reranker → generator → (optional) critic
+def run_agent_pipeline(
+    query: str,
+    conversation_state: Optional[Dict[str, Any]] = None,
+) -> tuple[str, List[Dict], Dict[str, Any]]:
+    state = conversation_state or {}
+    plan = planner_plan(query, state)
+
+    if not plan.get("need_retrieval", True):
+        if plan.get("query_intent") == "goodbye":
+            response_text = "Goodbye! Feel free to return if you have more questions."
+        elif plan.get("query_intent") == "acknowledgment":
+            response_text = "You're welcome! Let me know if you need anything else."
+        else:
+            response_text = (
+                "Hello! I'm here to help with SAMA and KSA regulatory questions. How can I assist you?"
+            )
+        updated_state = plan.get("updated_state") or state
+        return response_text, [], updated_state
+
+    # Build filters from state / plan
+    filters: Dict[str, str] = {}
+    lang = state.get("language") or plan.get("response_language") or detect_language(query)
+    filters["language"] = lang
+    if state.get("active_regulator"):
+        filters["regulator"] = state["active_regulator"]
+    elif "sama" in query.lower():
+        filters["regulator"] = "SAMA"
+    elif "cma" in query.lower():
+        filters["regulator"] = "CMA"
+
+    search_query = rewrite_query(query, plan, state)
+    query_embedding = generate_query_embedding(search_query)
+    chunks = search_chunks(query_embedding, top_k=plan["top_k"], filters=filters)
     chunks = rerank_chunks(chunks, top_n=5)
+
+    if not chunks:
+        response_text = generate_clarification_message(query, state)
+        updated_state = plan.get("updated_state") or state
+        return response_text, [], updated_state
+
+    max_similarity = max(c.get("similarity", 0) for c in chunks)
+    if max_similarity < RELEVANCE_THRESHOLD:
+        response_text = generate_clarification_message(query, state)
+        updated_state = plan.get("updated_state") or state
+        return response_text, [], updated_state
+
     references = []
     for chunk in chunks:
         clean_text = strip_chunk_metadata(chunk["text"])
@@ -355,22 +558,26 @@ def run_agent_pipeline(query: str) -> tuple[str, List[Dict]]:
             "page": chunk.get("chunk_index", 0),
             "snippet": snippet,
         })
-    draft = generate_response(query, chunks, plan)
+
+    draft = generate_response(query, chunks, plan, state)
     if plan.get("use_refiner") and draft:
         try:
             model, tokenizer = load_model()
             draft = critic_refine(draft, model, tokenizer)
         except Exception:
             pass
-    return draft, references
+
+    updated_state = plan.get("updated_state") or state
+    return draft, references, updated_state
 
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     query = request.message
-    response_text, references = run_agent_pipeline(query)
+    state = _state_to_dict(request.conversation_state)
+    response_text, references, updated_state = run_agent_pipeline(query, state)
     return StreamingResponse(
-        stream_response(response_text, references),
+        stream_response(response_text, references, updated_state),
         media_type="text/event-stream",
     )
 

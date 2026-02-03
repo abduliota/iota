@@ -15,8 +15,18 @@ interface ChatInterfaceProps {
   onLimitReached?: () => void;
 }
 
+export type ConversationState = {
+  active_topic?: string;
+  active_regulator?: string;
+  active_domain?: string;
+  language?: string;
+  last_intent?: string;
+  last_query?: string;
+};
+
 export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitReached }: ChatInterfaceProps) {
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
+  const [conversationState, setConversationState] = useState<ConversationState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [activeTab, setActiveTab] = useState('answer');
@@ -60,7 +70,10 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({
+          message: content,
+          conversation_state: Object.keys(conversationState).length ? conversationState : undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -90,6 +103,9 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
               setStreamingContent(fullContent);
             } else if (data.type === 'done') {
               references = data.references || [];
+              if (data.conversation_state && typeof data.conversation_state === 'object') {
+                setConversationState(data.conversation_state);
+              }
             }
           }
         }
