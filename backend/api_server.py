@@ -249,16 +249,21 @@ def get_adjacent_chunks(chunk_list: List[Dict]) -> List[Dict]:
 
 
 def extract_assistant_response(full_output: str) -> str:
-    if "assistant" in full_output.lower():
+    # Use turn marker so we don't split on "assistant" inside the system prompt
+    delim = "\nassistant\n"
+    if delim in full_output:
+        parts = full_output.rsplit(delim, 1)
+        answer = parts[-1].strip()
+    elif "assistant" in full_output.lower():
         parts = full_output.split("assistant")
-        if len(parts) > 1:
-            answer = parts[-1].strip()
-            if "\nuser\n" in answer:
-                answer = answer.split("\nuser\n")[0]
-            if "\nsystem\n" in answer:
-                answer = answer.split("\nsystem\n")[0]
-            return answer.strip()
-    return full_output.strip()
+        answer = parts[-1].strip() if len(parts) > 1 else full_output.strip()
+    else:
+        return full_output.strip()
+    if "\nuser\n" in answer:
+        answer = answer.split("\nuser\n")[0]
+    if "\nsystem\n" in answer:
+        answer = answer.split("\nsystem\n")[0]
+    return answer.strip()
 
 
 def strip_chunk_metadata(text: str) -> str:
