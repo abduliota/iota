@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Chat } from '@/lib/types';
-import { getChats, deleteChat } from '@/lib/storage';
+import { getChats } from '@/lib/storage';
 import { ChatItem } from './ChatItem';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -22,14 +22,6 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
 
   const handleNewChat = () => {
     onSelectChat(null);
-  };
-
-  const handleDelete = (chatId: string) => {
-    deleteChat(chatId);
-    setChats(getChats().sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()));
-    if (selectedChatId === chatId) {
-      onSelectChat(null);
-    }
   };
 
   return (
@@ -53,7 +45,6 @@ export function ChatHistory({ selectedChatId, onSelectChat }: ChatHistoryProps) 
               chat={chat}
               isSelected={selectedChatId === chat.id}
               onClick={() => onSelectChat(chat.id)}
-              onDelete={() => handleDelete(chat.id)}
             />
           ))}
         </div>

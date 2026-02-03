@@ -31,10 +31,6 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
     setLocalMessages(messages);
   }, [messages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [localMessages, streamingContent]);
-
   const handleSend = async (content: string) => {
     if (!canSend) {
       onLimitReached?.();

@@ -1,15 +1,13 @@
 import React from 'react';
 import { Chat } from '@/lib/types';
-import { Button } from '@/components/ui/button';
 
 interface ChatItemProps {
   chat: Chat;
   isSelected: boolean;
   onClick: () => void;
-  onDelete: () => void;
 }
 
-export function ChatItem({ chat, isSelected, onClick, onDelete }: ChatItemProps) {
+export function ChatItem({ chat, isSelected, onClick }: ChatItemProps) {
   return (
     <div
       role="button"
@@ -30,19 +28,6 @@ export function ChatItem({ chat, isSelected, onClick, onDelete }: ChatItemProps)
       <span className="flex-1 min-w-0 truncate" title={chat.title}>
         {chat.title}
       </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          onDelete();
-        }}
-        className="h-7 w-7 shrink-0 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-muted-foreground hover:text-foreground focus-visible:opacity-100"
-        aria-label="Delete chat"
-      >
-        <span className="text-xs">✕</span>
-      </Button>
     </div>
   );
 }
