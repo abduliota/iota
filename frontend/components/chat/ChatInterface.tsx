@@ -146,9 +146,6 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-              Idle
-            </span>
-            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
               {allMessages.length} messages
             </span>
             <Tabs value={activeTab} onValueChange={setActiveTab} className="hidden">
