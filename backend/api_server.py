@@ -249,16 +249,19 @@ def get_adjacent_chunks(chunk_list: List[Dict]) -> List[Dict]:
 
 
 def extract_assistant_response(full_output: str) -> str:
-    # Use turn marker so we don't split on "assistant" inside the system prompt
+    s = full_output.strip()
+    # Model sometimes echoes system prompt tail; don't show it as the answer
+    if s.startswith(" for KSA regulatory compliance.") or s.startswith("LANGUAGE (strict):"):
+        return ""
     delim = "\nassistant\n"
-    if delim in full_output:
-        parts = full_output.rsplit(delim, 1)
+    if delim in s:
+        parts = s.rsplit(delim, 1)
         answer = parts[-1].strip()
-    elif "assistant" in full_output.lower():
-        parts = full_output.split("assistant")
-        answer = parts[-1].strip() if len(parts) > 1 else full_output.strip()
+    elif "assistant" in s.lower():
+        parts = s.split("assistant")
+        answer = parts[-1].strip() if len(parts) > 1 else s
     else:
-        return full_output.strip()
+        return s
     if "\nuser\n" in answer:
         answer = answer.split("\nuser\n")[0]
     if "\nsystem\n" in answer:
