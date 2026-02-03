@@ -30,4 +30,4 @@ else:
     print("\nPossible locations to check:")
     print("  - C:\\ProgramData\\chocolatey\\lib\\tesseract\\")
     print("  - C:\\tools\\tesseract\\")
-    print("  - Check Chocolatey package location")
+    print("  - Check Chocolatey package location") 
