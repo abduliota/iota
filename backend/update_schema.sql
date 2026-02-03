@@ -14,3 +14,6 @@ CREATE INDEX chunks_embedding_idx
 ON chunks  
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
+
+-- Phase 1: sparse vectors for hybrid retrieval
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS sparse_vector jsonb;

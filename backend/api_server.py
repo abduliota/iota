@@ -1,5 +1,6 @@
 import os
 import json
+import joblib
 from typing import List, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,11 +42,14 @@ PGDATABASE = os.environ.get("PGDATABASE", "postgres")
 PGPORT = os.environ.get("PGPORT", "5432")
 DISABLE_SEMANTIC_CACHE = os.environ.get("DISABLE_SEMANTIC_CACHE", "0") == "1"
 CACHE_SIMILARITY_THRESHOLD = float(os.environ.get("CACHE_SIMILARITY_THRESHOLD", "0.95"))
+DISABLE_HYBRID_RETRIEVAL = os.environ.get("DISABLE_HYBRID_RETRIEVAL", "0") == "1"
+TFIDF_PATH = os.environ.get("TFIDF_VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "tfidf_vectorizer.pkl"))
 
 # Global model and tokenizer
 model = None
 tokenizer = None
 embedding_client = None
+tfidf_vectorizer = None
 
 
 def get_db_connection():
@@ -114,6 +118,7 @@ def search_chunks(query_embedding: List[float], top_k: int = 5) -> List[Dict]:
     cur.execute("""
         SELECT 
             c.id,
+            c.document_id,
             c.text,
             c.chunk_index,
             c.section_heading,
@@ -131,17 +136,116 @@ def search_chunks(query_embedding: List[float], top_k: int = 5) -> List[Dict]:
     for row in cur.fetchall():
         results.append({
             "id": str(row[0]),
-            "text": row[1],
-            "chunk_index": row[2],
-            "section_heading": row[3],
-            "filename": row[4],
-            "page_title": row[5],
-            "similarity": float(row[6]),
+            "document_id": row[1],
+            "text": row[2],
+            "chunk_index": row[3],
+            "section_heading": row[4],
+            "filename": row[5],
+            "page_title": row[6],
+            "similarity": float(row[7]),
         })
     
     cur.close()
     conn.close()
     return results
+
+
+def get_tfidf_vectorizer():
+    global tfidf_vectorizer
+    if tfidf_vectorizer is None and os.path.exists(TFIDF_PATH):
+        tfidf_vectorizer = joblib.load(TFIDF_PATH)
+    return tfidf_vectorizer
+
+
+def search_chunks_sparse(query: str, top_k: int = 5) -> List[Dict]:
+    vec = get_tfidf_vectorizer()
+    if vec is None:
+        return []
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT c.id, c.document_id, c.text, c.chunk_index, c.section_heading, d.filename, d.page_title, c.sparse_vector
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE c.sparse_vector IS NOT NULL
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    if not rows:
+        return []
+    query_vec = vec.transform([query])
+    scored = []
+    for r in rows:
+        chunk_id, doc_id, text, chunk_idx, section_heading, filename, page_title, sv = r
+        if not sv:
+            continue
+        pairs = json.loads(sv) if isinstance(sv, str) else sv
+        dot = 0.0
+        qnorm = 0.0
+        cnorm = 0.0
+        for idx, w in pairs:
+            qi = query_vec[0, idx]
+            dot += qi * w
+            qnorm += qi * qi
+            cnorm += w * w
+        if qnorm > 0 and cnorm > 0:
+            sim = dot / (qnorm ** 0.5 * cnorm ** 0.5)
+            scored.append(({"id": str(chunk_id), "document_id": doc_id, "text": text, "chunk_index": chunk_idx, "section_heading": section_heading, "filename": filename, "page_title": page_title, "similarity": sim}, sim))
+    scored.sort(key=lambda x: -x[1])
+    return [x[0] for x in scored[:top_k]]
+
+
+def rrf(dense_list: List[Dict], sparse_list: List[Dict], k: int = 60) -> List[Dict]:
+    scores = {}
+    for rank, c in enumerate(dense_list, 1):
+        cid = c["id"]
+        scores[cid] = scores.get(cid, 0) + 1.0 / (k + rank)
+    for rank, c in enumerate(sparse_list, 1):
+        cid = c["id"]
+        scores[cid] = scores.get(cid, 0) + 1.0 / (k + rank)
+    by_id = {c["id"]: c for c in dense_list}
+    for c in sparse_list:
+        if c["id"] not in by_id:
+            by_id[c["id"]] = c
+    sorted_ids = sorted(scores.keys(), key=lambda x: -scores[x])
+    return [by_id[cid] for cid in sorted_ids]
+
+
+def get_adjacent_chunks(chunk_list: List[Dict]) -> List[Dict]:
+    if not chunk_list:
+        return []
+    seen = {c["id"] for c in chunk_list}
+    pairs = []
+    for c in chunk_list:
+        doc_id = c.get("document_id")
+        idx = c.get("chunk_index", 0)
+        if doc_id is None:
+            continue
+        if idx > 0:
+            pairs.append((doc_id, idx - 1))
+        pairs.append((doc_id, idx + 1))
+    if not pairs:
+        return []
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT c.id, c.document_id, c.text, c.chunk_index, c.section_heading, d.filename, d.page_title
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE (c.document_id, c.chunk_index) IN %s
+    """, (tuple(set(pairs)),))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    out = []
+    for r in rows:
+        cid = str(r[0])
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append({"id": cid, "document_id": r[1], "text": r[2], "chunk_index": r[3], "section_heading": r[4], "filename": r[5], "page_title": r[6], "similarity": 0.0})
+    return out
 
 
 def extract_assistant_response(full_output: str) -> str:
@@ -451,13 +555,27 @@ async def chat(request: ChatRequest):
     query = request.message
     query_embedding = generate_query_embedding(query)
 
-    if not DISABLE_SEMANTIC_CACHE:
-        cache_task = asyncio.to_thread(get_cached_response, query_embedding, CACHE_SIMILARITY_THRESHOLD)
-        retrieval_task = asyncio.to_thread(search_chunks, query_embedding, 5)
-        cached_result, chunks = await asyncio.gather(cache_task, retrieval_task)
+    if DISABLE_HYBRID_RETRIEVAL:
+        if not DISABLE_SEMANTIC_CACHE:
+            cache_task = asyncio.to_thread(get_cached_response, query_embedding, CACHE_SIMILARITY_THRESHOLD)
+            retrieval_task = asyncio.to_thread(search_chunks, query_embedding, 5)
+            cached_result, chunks = await asyncio.gather(cache_task, retrieval_task)
+        else:
+            cached_result = None
+            chunks = await asyncio.to_thread(search_chunks, query_embedding, 5)
     else:
-        cached_result = None
-        chunks = await asyncio.to_thread(search_chunks, query_embedding, 5)
+        if not DISABLE_SEMANTIC_CACHE:
+            cache_task = asyncio.to_thread(get_cached_response, query_embedding, CACHE_SIMILARITY_THRESHOLD)
+            dense_task = asyncio.to_thread(search_chunks, query_embedding, 5)
+            sparse_task = asyncio.to_thread(search_chunks_sparse, query, 5)
+            cached_result, dense_results, sparse_results = await asyncio.gather(cache_task, dense_task, sparse_task)
+        else:
+            cached_result = None
+            dense_results = await asyncio.to_thread(search_chunks, query_embedding, 5)
+            sparse_results = await asyncio.to_thread(search_chunks_sparse, query, 5)
+        merged = rrf(dense_results, sparse_results, k=60)[:10]
+        adjacent = get_adjacent_chunks(merged)
+        chunks = merged + adjacent
 
     references: List[Dict] = []
     for chunk in chunks:
