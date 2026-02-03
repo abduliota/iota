@@ -131,13 +131,19 @@ def search_chunks(
     use_regulator = bool(filters.get("regulator"))
     if filters.get("language"):
         where_parts.append("c.language = %s")
-        params.append(filters["language"])
     if use_regulator:
         where_parts.append("d.regulator = %s")
-        params.append(filters["regulator"])
 
     where_sql = " AND ".join(where_parts)
-    params.extend([embedding_str, embedding_str, top_k])
+
+    # Params order must match SQL: SELECT embedding, WHERE filters..., ORDER BY embedding, LIMIT
+    params.append(embedding_str)
+    if filters.get("language"):
+        params.append(filters["language"])
+    if use_regulator:
+        params.append(filters["regulator"])
+    params.append(embedding_str)
+    params.append(top_k)
 
     sql = f"""
         SELECT 
