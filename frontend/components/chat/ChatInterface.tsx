@@ -80,27 +80,29 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
         throw new Error('No response body');
       }
 
+      let buffer = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value);
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            
+        for (const event of events) {
+          const trimmed = event.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(trimmed.slice(6));
             if (data.type === 'token') {
-              fullContent += data.content;
-              setStreamingContent(fullContent);
+              fullContent += data.content ?? '';
             } else if (data.type === 'done') {
               references = data.references || [];
               if (data.input_tokens != null) inputTokens = data.input_tokens;
               if (data.output_tokens != null) outputTokens = data.output_tokens;
               if (data.final_content != null && typeof data.final_content === 'string') fullContent = data.final_content;
             }
-          }
+          } catch (_) {}
         }
       }
 
