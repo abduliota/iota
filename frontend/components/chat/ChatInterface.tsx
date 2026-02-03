@@ -131,26 +131,29 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
   return (
     <div className="flex h-full">
       <div className="flex flex-col flex-1 bg-background text-foreground transition-colors duration-200 rounded-none sm:rounded-2xl border border-border/60 overflow-hidden">
-        {/* Chat header */}
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b border-border/70 bg-background/90 backdrop-blur-sm">
+        {/* Chat header - Regulation AI style */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
           <div className="flex flex-col gap-0.5">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground/80">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Conversation
             </span>
-            <span className="text-sm font-medium text-foreground">
+            <h2 className="text-xl font-semibold text-foreground md:text-2xl">
               Assistant
-            </span>
-            <span className="text-xs text-muted-foreground">
+            </h2>
+            <p className="text-sm text-muted-foreground">
               Responses cite the retrieved passages.
-            </span>
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              Idle
+            </span>
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              {allMessages.length} messages
+            </span>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="hidden">
               <TabsList className="bg-muted/60 h-8 px-1 rounded-full">
-                <TabsTrigger
-                  value="answer"
-                  className="data-[state=active]:bg-background data-[state=active]:text-foreground rounded-full px-3 py-1 text-xs"
-                >
+                <TabsTrigger value="answer" className="rounded-full px-3 py-1 text-xs">
                   Answer
                 </TabsTrigger>
               </TabsList>
@@ -162,57 +165,10 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
         <div className="flex-1 min-h-0">
           <ScrollArea className="h-full px-3 sm:px-4 lg:px-6 py-4">
             {allMessages.length === 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="max-w-md w-full rounded-2xl border border-border/60 bg-muted/40 px-5 py-6 text-left shadow-sm">
-                  <p className="text-sm text-muted-foreground text-center">
-                    No messages yet. Ask your first question.
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2 mb-4 text-center">
-                    Get clear, grounded answers on Saudi regulatory frameworks, requirements, and compliance workflows.
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={() =>
-                        handleSend('Explain the cyber risk laws and governance requirements in KSA')
-                      }
-                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
-                    >
-                      Cyber risk laws
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleSend('What are the key remuneration and compensation regulations in KSA?')
-                      }
-                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
-                    >
-                      Remuneration laws
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleSend('What are the regulatory requirements for money exchange businesses in KSA?')
-                      }
-                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
-                    >
-                      Money exchange sector
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleSend('Explain the counter fraud requirements and controls in KSA')
-                      }
-                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
-                    >
-                      Counter fraud
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleSend('What are the cyber security governance and risk management requirements in KSA?')
-                      }
-                      className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-border bg-background hover:bg-muted/80 transition-colors"
-                    >
-                      Cyber security governance
-                    </button>
-                  </div>
-                </div>
+              <div className="flex flex-1 items-center justify-center p-6">
+                <p className="text-center text-sm text-muted-foreground">
+                  No messages yet. Ask your first question.
+                </p>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -226,8 +182,8 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
           </ScrollArea>
         </div>
 
-        {/* Input bar */}
-        <div className="border-t border-border/70 bg-background/95 backdrop-blur-sm px-2 sm:px-4 lg:px-6 py-3">
+        {/* Input bar - Regulation AI style */}
+        <div className="border-t border-border bg-card px-4 py-4">
           <AnimatedInput
             onSend={handleSend}
             disabled={isLoading}

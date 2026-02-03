@@ -6,6 +6,8 @@ import { Chat, Message } from '@/lib/types';
 import { getChat, saveChat } from '@/lib/storage';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { ChatHistory } from '@/components/sidebar/ChatHistory';
+import { SummaryCard } from '@/components/dashboard/SummaryCard';
+import { LatestSourcesPanel } from '@/components/dashboard/LatestSourcesPanel';
 import { usePromptLimit } from '@/hooks/usePromptLimit';
 import { useFingerprintAuth } from '@/hooks/useFingerprintAuth';
 import { PromptCounter } from '@/components/auth/PromptCounter';
@@ -73,6 +75,10 @@ export default function Home() {
     saveChat(chat);
   };
 
+  const latestRefs = currentChat?.messages
+    ? [...currentChat.messages].reverse().find((m) => m.role === 'assistant' && m.references?.length)?.references ?? null
+    : null;
+
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
       {/* Prompt counter pinned to top center */}
@@ -85,7 +91,7 @@ export default function Home() {
       </div>
 
       {/* Desktop / tablet sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 border-r border-border bg-card/40">
+      <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 shrink-0 border-r border-border bg-card">
         {/* Logo header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <img src="/logo.jpeg" alt="IOTA Technologies" className="h-8 w-8" />
@@ -167,35 +173,31 @@ export default function Home() {
           </div>
         )}
 
-        {/* Centered chat content */}
-        <div className="flex-1 min-h-0 flex flex-col items-center overflow-hidden">
-          <div className="hidden md:flex w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl px-2 sm:px-4 lg:px-6 justify-end py-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="rounded-full text-xs"
-              onClick={() => setSelectedChatId(null)}
-            >
-              + New chat
-            </Button>
-          </div>
-          <div className="flex-1 min-h-0 w-full max-w-3xl lg:max-w-4xl xl-max-w-5xl px-2 sm:px-4 lg:px-6 flex relative">
-            <div className="flex-1">
-              {currentChat ? (
-                <ChatInterface 
-                  messages={currentChat.messages}
-                  onNewMessage={handleNewMessage}
-                  canSend={isAuthenticated || canSend}
-                  onLimitReached={() => setShowAuthModal(true)}
-                />
-              ) : (
-                <ChatInterface 
-                  messages={[]}
-                  onNewMessage={handleNewMessage}
-                  canSend={isAuthenticated || canSend}
-                  onLimitReached={() => setShowAuthModal(true)}
-                />
-              )}
+        {/* Regulation AI dashboard: summary card + two-column chat/sources */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-auto">
+          <div className="mx-auto w-full max-w-[1200px] px-4 py-4 md:px-6 md:py-6">
+            <SummaryCard />
+            <div className="mt-6 flex flex-1 min-h-0 gap-4 md:gap-6">
+              <div className="flex-1 min-w-0 flex flex-col rounded-xl border border-border bg-card shadow-sm">
+                {currentChat ? (
+                  <ChatInterface
+                    messages={currentChat.messages}
+                    onNewMessage={handleNewMessage}
+                    canSend={isAuthenticated || canSend}
+                    onLimitReached={() => setShowAuthModal(true)}
+                  />
+                ) : (
+                  <ChatInterface
+                    messages={[]}
+                    onNewMessage={handleNewMessage}
+                    canSend={isAuthenticated || canSend}
+                    onLimitReached={() => setShowAuthModal(true)}
+                  />
+                )}
+              </div>
+              <div className="hidden lg:block w-80 shrink-0">
+                <LatestSourcesPanel references={latestRefs} />
+              </div>
             </div>
           </div>
         </div>

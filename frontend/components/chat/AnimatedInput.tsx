@@ -59,20 +59,21 @@ export function AnimatedInput({ onSend, disabled = false, canSend = true, onLimi
             onKeyDown={handleKeyDown}
             disabled={disabled || !canSend}
             placeholder={canSend ? "Ask about the uploaded PDF..." : "Sign up for unlimited prompts"}
-            className={`w-full px-4 py-3 pr-12 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 bg-[#1a1a1a] text-white placeholder-gray-400 transition-all duration-200 max-h-32 custom-scroll ${!canSend ? 'cursor-pointer' : ''}`}
+            className={`w-full px-4 py-3 pr-24 border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 bg-muted/50 text-foreground placeholder:text-muted-foreground transition-all duration-200 max-h-32 custom-scroll ${!canSend ? 'cursor-pointer' : ''}`}
             rows={1}
           />
         </div>
         <motion.div
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           <Button
             onClick={handleSubmit}
             disabled={disabled || !input.trim() || !canSend}
-            className="px-6"
+            className="rounded-xl bg-accent px-5 py-3 text-accent-foreground hover:bg-accent/90"
           >
-            <Send className="h-4 w-4" />
+            <Send className="mr-2 h-4 w-4" />
+            Send
           </Button>
         </motion.div>
       </div>

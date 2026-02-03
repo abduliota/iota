@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+
 export const metadata: Metadata = {
-  title: 'KSA RegTech',
-  description: 'KSA RegTech',
+  title: 'Regulation AI',
+  description: 'AI answers with citations from SAMA rulebooks and schemes.',
 };
 
 export default function RootLayout({
@@ -13,7 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body>{children}</body>
+      <body className={inter.className}>
+        {children}
+      </body>
     </html>
   );
 }
