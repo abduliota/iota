@@ -183,6 +183,18 @@ def is_glossary_section(heading) -> bool:
     return ("glossary" in h) or ("definition" in h)
 
 
+def is_conversational_query(query: str) -> bool:
+    """Treat greetings and very short messages as conversational."""
+    q = query.strip().lower()
+    if len(q) > 25:
+        return False
+    greetings = (
+        "hi", "hello", "hey", "thanks", "thank you", "how are you", "what's up",
+        "good morning", "good afternoon", "good evening", "hi there", "hey there",
+    )
+    return q in greetings or q.rstrip(".!?").strip() in greetings
+
+
 def clean_response_text(text: str, max_bullets: int = 10) -> str:
     """Remove duplicate lines and cap number of bullet points."""
     lines = [line.rstrip() for line in text.splitlines() if line.strip()]
@@ -217,6 +229,25 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
 
     is_explain = is_explanation_query(query)
 
+    if is_conversational_query(query):
+        system_content = (
+            "You are a friendly KSA regulatory assistant. The user has sent a greeting or short message.\n"
+            "Reply in ONE short, natural sentence in English only. Be warm and conversational like a helpful chatbot.\n"
+            "Do NOT use bullet points. Do NOT mention regulations unless the user asked. Do NOT include Arabic or any other language."
+        )
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": query},
+        ]
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        enc = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512).to(model.device)
+        with torch.no_grad():
+            gen = model.generate(**enc, max_new_tokens=64, temperature=0.5, do_sample=True)
+        prompt_len = enc["input_ids"].shape[1]
+        output = tokenizer.decode(gen[0][prompt_len:], skip_special_tokens=True)
+        raw = extract_assistant_response(output)
+        return (clean_response_text(raw) or raw).strip()
+
     extra_instruction = ""
     if is_list_query:
         extra_instruction += (
@@ -249,14 +280,17 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     system_content = (
         "You are a helpful assistant for KSA regulatory compliance.\n\n"
         + extra_instruction
-        + "- Always answer in clear English.\n"
-        + "- Respond with 5-10 bullet points.\n"
-        + "- Each bullet should be 1–2 short sentences.\n"
+        + "LANGUAGE (strict):\n"
+        + "- Answer ONLY in English. Your entire response must be in English.\n"
+        + "- Do NOT include Arabic, or any other language, in your response. Do NOT quote or copy Arabic text from the context.\n"
+        + "- Summarize and explain in English only. If the context contains Arabic or other languages, translate the meaning into English and state it in your own words.\n"
+        + "- Condense all relevant information into clear, concise bullet points written in English only.\n\n"
+        + "FORMAT:\n"
+        + "- Respond with 5-10 bullet points. Each bullet should be 1–2 short sentences.\n"
         + "- Focus only on the main regulatory requirements or rules relevant to the question.\n"
         + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
         + "- Do NOT repeat the same sentence or phrase.\n"
-        + "- Do NOT mention document IDs, page numbers, or chunk indices.\n"
-        + "\n"
+        + "- Do NOT mention document IDs, page numbers, or chunk indices.\n\n"
         + "Bad example (to avoid):\n"
         + "- Risk management is the process of identifying, assessing, prioritizing, and taking action to accept, "
           "transfer, mitigate, or eliminate risks. (repeated or copied from glossary)\n"
@@ -302,6 +336,21 @@ def _build_prompt_enc(query: str, chunks: List[Dict], model, tokenizer):
     lower_query = query.lower()
     is_list_query = any(lower_query.startswith(p) for p in ["what are", "list", "which are", "what are the"])
     is_explain = is_explanation_query(query)
+
+    if is_conversational_query(query):
+        system_content = (
+            "You are a friendly KSA regulatory assistant. The user has sent a greeting or short message.\n"
+            "Reply in ONE short, natural sentence in English only. Be warm and conversational like a helpful chatbot.\n"
+            "Do NOT use bullet points. Do NOT mention regulations unless the user asked. Do NOT include Arabic or any other language."
+        )
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": query},
+        ]
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        enc = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512).to(model.device)
+        return enc, enc["input_ids"].shape[1]
+
     extra_instruction = ""
     if is_list_query:
         extra_instruction += "- If the question asks to 'list' items, respond with a concise bullet list of names with at most one short phrase of explanation each.\n"
@@ -315,10 +364,9 @@ def _build_prompt_enc(query: str, chunks: List[Dict], model, tokenizer):
     context = "\n\n".join(f"[{i+1}] {strip_chunk_metadata(c['text'])[:1000]}" for i, c in enumerate(used_chunks))
     system_content = (
         "You are a helpful assistant for KSA regulatory compliance.\n\n" + extra_instruction
-        + "- Always answer in clear English.\n- Respond with 5-10 bullet points.\n- Each bullet should be 1–2 short sentences.\n"
-        + "- Focus only on the main regulatory requirements or rules relevant to the question.\n"
-        + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
-        + "- Do NOT repeat the same sentence or phrase.\n- Do NOT mention document IDs, page numbers, or chunk indices.\n"
+        + "LANGUAGE (strict): Answer ONLY in English. Do NOT include Arabic or any other language. Do NOT quote or copy Arabic from context. Summarize and condense into clear bullet points in English only.\n"
+        + "FORMAT: Respond with 5-10 bullet points. Each bullet 1–2 short sentences. Focus only on main regulatory requirements. "
+        + "Do NOT copy long passages or glossary verbatim. Do NOT repeat the same phrase. Do NOT mention document IDs, page numbers, or chunk indices.\n"
     )
     messages = [
         {"role": "system", "content": system_content},
