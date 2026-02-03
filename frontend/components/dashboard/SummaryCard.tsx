@@ -3,7 +3,11 @@
 import React from 'react';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
-export function SummaryCard() {
+interface SummaryCardProps {
+  rightSlot?: React.ReactNode;
+}
+
+export function SummaryCard({ rightSlot }: SummaryCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-6 shadow-sm transition-colors duration-200">
       <div className="flex items-start justify-between gap-2">
@@ -21,7 +25,12 @@ export function SummaryCard() {
             AI answers with citations from SAMA rulebooks and schemes.
           </p>
         </div>
-        <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-2">
+          {rightSlot != null ? (
+            <div className="hidden md:block">{rightSlot}</div>
+          ) : null}
+          <ThemeToggle />
+        </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-medium text-green-600 dark:text-green-400">

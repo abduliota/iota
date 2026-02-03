@@ -78,16 +78,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
-      {/* Desktop: Unlimited badge + theme toggle (top right) */}
-      <div className="hidden md:flex absolute top-4 right-4 z-30 items-center gap-2">
-        <PromptCounter
-          remaining={remainingPrompts}
-          total={10}
-          isAuthenticated={isAuthenticated}
-        />
-        <ThemeToggle />
-      </div>
-
       {/* Desktop sidebar - ChatGPT style, 260px */}
       <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 border-r border-border bg-sidebar-bg transition-[background-color] duration-200">
         <div className="flex items-center justify-between gap-2.5 px-3 py-3 border-b border-border">
@@ -177,7 +167,15 @@ export default function Home() {
         {/* Regulation AI dashboard: summary card + two-column chat/sources */}
         <div className="flex-1 min-h-0 flex flex-col overflow-auto">
           <div className="mx-auto w-full max-w-[1200px] px-4 py-4 md:px-6 md:py-6">
-            <SummaryCard />
+            <SummaryCard
+              rightSlot={
+                <PromptCounter
+                  remaining={remainingPrompts}
+                  total={10}
+                  isAuthenticated={isAuthenticated}
+                />
+              }
+            />
             <div className="mt-6 flex flex-1 min-h-0 gap-4 md:gap-6">
               <div className="flex-1 min-w-0 flex flex-col rounded-xl border border-border bg-card shadow-sm">
                 {currentChat ? (
