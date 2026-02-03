@@ -78,8 +78,8 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-background text-foreground transition-colors duration-200">
-      {/* Desktop: status badge + theme toggle (top center) */}
-      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-30 items-center gap-2">
+      {/* Desktop: Unlimited badge + theme toggle (top right) */}
+      <div className="hidden md:flex absolute top-4 right-4 z-30 items-center gap-2">
         <PromptCounter
           remaining={remainingPrompts}
           total={10}
