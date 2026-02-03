@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import psycopg2
 from openai import AzureOpenAI
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer, BitsAndBytesConfig, StoppingCriteria, StoppingCriteriaList
 from peft import PeftModel
 import asyncio
 import threading
@@ -50,6 +50,20 @@ model = None
 tokenizer = None
 embedding_client = None
 tfidf_vectorizer = None
+
+
+class StopOnEchoCriteria(StoppingCriteria):
+    """Stop when model starts echoing the system prompt tail."""
+    def __init__(self, tokenizer, prompt_len: int, stop_phrases: List[str]):
+        self.tokenizer = tokenizer
+        self.prompt_len = prompt_len
+        self.stop_phrases = stop_phrases
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> bool:
+        if input_ids.shape[1] <= self.prompt_len:
+            return False
+        text = self.tokenizer.decode(input_ids[0][self.prompt_len:].tolist(), skip_special_tokens=True)
+        return any(p in text for p in self.stop_phrases)
 
 
 def get_db_connection():
@@ -251,7 +265,10 @@ def get_adjacent_chunks(chunk_list: List[Dict]) -> List[Dict]:
 def extract_assistant_response(full_output: str) -> str:
     s = full_output.strip()
     # Model sometimes echoes system prompt tail; don't show it as the answer
-    if s.startswith(" for KSA regulatory compliance.") or s.startswith("LANGUAGE (strict):"):
+    echo_starts = (" for KSA regulatory compliance.", "for KSA regulatory compliance.", "LANGUAGE (strict):", "Answer ONLY in English.")
+    if any(s.startswith(prefix) for prefix in echo_starts):
+        return ""
+    if "LANGUAGE (strict):" in s and "Do NOT include Arabic" in s and "FORMAT:" in s:
         return ""
     delim = "\nassistant\n"
     if delim in s:
@@ -495,10 +512,12 @@ async def stream_generate_response(query: str, chunks: List[Dict], references: L
     enc, input_tokens = _build_prompt_enc(query, chunks, model, tokenizer)
     streamer = TextIteratorStreamer(tokenizer, skip_special_tokens=True)
     token_queue = Queue()
+    stop_phrases = [" for KSA regulatory compliance.", "for KSA regulatory compliance.", "LANGUAGE (strict):"]
+    stop_criteria = StoppingCriteriaList([StopOnEchoCriteria(tokenizer, enc["input_ids"].shape[1], stop_phrases)])
 
     def run_generate():
         with torch.no_grad():
-            model.generate(**enc, max_new_tokens=384, temperature=0.3, do_sample=False, streamer=streamer)
+            model.generate(**enc, max_new_tokens=384, temperature=0.3, do_sample=False, streamer=streamer, stopping_criteria=stop_criteria)
 
     def run_consume():
         for t in streamer:
