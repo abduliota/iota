@@ -98,6 +98,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
               references = data.references || [];
               if (data.input_tokens != null) inputTokens = data.input_tokens;
               if (data.output_tokens != null) outputTokens = data.output_tokens;
+              if (data.final_content != null && typeof data.final_content === 'string') fullContent = data.final_content;
             }
           }
         }

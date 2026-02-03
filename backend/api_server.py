@@ -399,17 +399,20 @@ async def stream_generate_response(query: str, chunks: List[Dict], references: L
     t2.start()
 
     output_tokens = 0
+    full_text = ""
     while True:
         token = await asyncio.to_thread(token_queue.get)
         if token is None:
             break
         output_tokens += 1
+        full_text += token
         yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
     t1.join()
     t2.join()
 
-    yield f"data: {json.dumps({'type': 'done', 'references': references, 'input_tokens': input_tokens, 'output_tokens': output_tokens})}\n\n"
+    cleaned = clean_response_text(extract_assistant_response(full_text))
+    yield f"data: {json.dumps({'type': 'done', 'references': references, 'input_tokens': input_tokens, 'output_tokens': output_tokens, 'final_content': cleaned})}\n\n"
 
 
 class ChatRequest(BaseModel):
