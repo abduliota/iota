@@ -21,7 +21,7 @@ export function References({ references }: ReferencesProps) {
           <div className="text-muted-foreground mt-0.5">
             Page {ref.page}
           </div>
-          <div className="text-muted-foreground mt-1 line-clamp-3">
+          <div className="text-muted-foreground mt-1 whitespace-pre-wrap break-words">
             {ref.snippet}
           </div>
         </div>

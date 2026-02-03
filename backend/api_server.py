@@ -312,7 +312,7 @@ async def chat(request: ChatRequest):
     references: List[Dict] = []
     for chunk in chunks:
         clean_text = strip_chunk_metadata(chunk["text"])
-        snippet = clean_text[:200] + "..." if len(clean_text) > 200 else clean_text
+        snippet = clean_text[:600] + "..." if len(clean_text) > 600 else clean_text
         references.append(
             {
                 "id": chunk["id"],
