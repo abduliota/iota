@@ -86,6 +86,13 @@ export default function Home() {
 
       {/* Desktop / tablet sidebar */}
       <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 border-r border-border bg-card/40">
+        {/* Logo header */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <img src="/logo.jpeg" alt="IOTA Technologies" className="h-8 w-8" />
+          <span className="text-sm font-medium text-foreground">
+            IOTA Technologies
+          </span>
+        </div>
         <ChatHistory 
           selectedChatId={selectedChatId} 
           onSelectChat={setSelectedChatId}
@@ -105,9 +112,12 @@ export default function Home() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="text-sm font-medium text-muted-foreground">
-            KSA Regulatory Assistant
-          </span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-6 w-6" />
+            <span className="text-sm font-medium text-muted-foreground">
+              IOTA Technologies
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <PromptCounter
               remaining={remainingPrompts}
