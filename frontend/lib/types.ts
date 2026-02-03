@@ -10,6 +10,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   references?: Reference[];
+  usage?: { input_tokens: number; output_tokens: number };
   timestamp: Date;
 }
 

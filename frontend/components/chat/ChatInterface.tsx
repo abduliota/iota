@@ -56,6 +56,8 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
 
     let fullContent = '';
     let references: any[] = [];
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -94,6 +96,8 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
               setStreamingContent(fullContent);
             } else if (data.type === 'done') {
               references = data.references || [];
+              if (data.input_tokens != null) inputTokens = data.input_tokens;
+              if (data.output_tokens != null) outputTokens = data.output_tokens;
             }
           }
         }
@@ -104,6 +108,7 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
         role: 'assistant',
         content: fullContent,
         references: references,
+        usage: inputTokens != null && outputTokens != null ? { input_tokens: inputTokens, output_tokens: outputTokens } : undefined,
         timestamp: new Date(),
       };
       setLocalMessages(prev => [...prev, assistantMessage]);

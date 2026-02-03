@@ -9,9 +9,12 @@ from dotenv import load_dotenv
 import psycopg2
 from openai import AzureOpenAI
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer, BitsAndBytesConfig
 from peft import PeftModel
 import asyncio
+import threading
+from queue import Queue
+from cache import get_cached_response, set_cached_response
 
 load_dotenv()
 
@@ -36,6 +39,8 @@ PGUSER = os.environ.get("PGUSER")
 PGPASSWORD = os.environ.get("PGPASSWORD")
 PGDATABASE = os.environ.get("PGDATABASE", "postgres")
 PGPORT = os.environ.get("PGPORT", "5432")
+DISABLE_SEMANTIC_CACHE = os.environ.get("DISABLE_SEMANTIC_CACHE", "0") == "1"
+CACHE_SIMILARITY_THRESHOLD = float(os.environ.get("CACHE_SIMILARITY_THRESHOLD", "0.95"))
 
 # Global model and tokenizer
 model = None
@@ -59,11 +64,22 @@ def load_model():
     if model is None:
         tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.eos_token
-        base_model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16,
-            device_map="auto",
-        )
+        quantization_config = None
+        if torch.cuda.is_available():
+            try:
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                )
+            except Exception:
+                quantization_config = None
+        kwargs = {"device_map": "auto"}
+        if quantization_config:
+            kwargs["quantization_config"] = quantization_config
+        else:
+            kwargs["torch_dtype"] = torch.float16
+        base_model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, **kwargs)
         model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
         model.config.pad_token_id = tokenizer.pad_token_id
     return model, tokenizer
@@ -281,34 +297,117 @@ def generate_response(query: str, chunks: List[Dict]) -> str:
     return clean_response_text(raw_text)
 
 
+def _build_prompt_enc(query: str, chunks: List[Dict], model, tokenizer):
+    """Build prompt and encoding like generate_response. Returns (enc, input_tokens)."""
+    lower_query = query.lower()
+    is_list_query = any(lower_query.startswith(p) for p in ["what are", "list", "which are", "what are the"])
+    is_explain = is_explanation_query(query)
+    extra_instruction = ""
+    if is_list_query:
+        extra_instruction += "- If the question asks to 'list' items, respond with a concise bullet list of names with at most one short phrase of explanation each.\n"
+    if is_explain:
+        extra_instruction += "- If the user asks you to explain or give an overview, write in your own words instead of copying glossary-style definitions.\n- Start with 1–2 short sentences that summarize the main idea.\n- Then provide 3–5 bullets focusing on concrete obligations, actions, or takeaways.\n- Avoid dictionary-style phrasing like 'X is the process of identifying, assessing...'.\n"
+    used_chunks = chunks
+    if is_explain:
+        non_glossary = [c for c in chunks if not is_glossary_section(c.get("section_heading"))]
+        if non_glossary:
+            used_chunks = non_glossary
+    context = "\n\n".join(f"[{i+1}] {strip_chunk_metadata(c['text'])[:1000]}" for i, c in enumerate(used_chunks))
+    system_content = (
+        "You are a helpful assistant for KSA regulatory compliance.\n\n" + extra_instruction
+        + "- Always answer in clear English.\n- Respond with 5-10 bullet points.\n- Each bullet should be 1–2 short sentences.\n"
+        + "- Focus only on the main regulatory requirements or rules relevant to the question.\n"
+        + "- Do NOT copy long passages or glossary definitions verbatim from the context.\n"
+        + "- Do NOT repeat the same sentence or phrase.\n- Do NOT mention document IDs, page numbers, or chunk indices.\n"
+    )
+    messages = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": f"Question: {query}\n\nContext:\n{context}"},
+    ]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    enc = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=2048).to(model.device)
+    return enc, enc["input_ids"].shape[1]
+
+
+async def stream_generate_response(query: str, chunks: List[Dict], references: List[Dict]):
+    """Stream tokens via thread + queue so event loop is not blocked."""
+    model, tokenizer = load_model()
+    enc, input_tokens = _build_prompt_enc(query, chunks, model, tokenizer)
+    streamer = TextIteratorStreamer(tokenizer, skip_special_tokens=True)
+    token_queue = Queue()
+
+    def run_generate():
+        with torch.no_grad():
+            model.generate(**enc, max_new_tokens=384, temperature=0.3, do_sample=False, streamer=streamer)
+
+    def run_consume():
+        for t in streamer:
+            token_queue.put(t)
+        token_queue.put(None)
+
+    t1 = threading.Thread(target=run_generate)
+    t2 = threading.Thread(target=run_consume)
+    t1.start()
+    t2.start()
+
+    output_tokens = 0
+    while True:
+        token = await asyncio.to_thread(token_queue.get)
+        if token is None:
+            break
+        output_tokens += 1
+        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+    t1.join()
+    t2.join()
+
+    yield f"data: {json.dumps({'type': 'done', 'references': references, 'input_tokens': input_tokens, 'output_tokens': output_tokens})}\n\n"
+
+
 class ChatRequest(BaseModel):
     message: str
 
 
-async def stream_response(query: str, chunks: List[Dict], references: List[Dict]):
-    response_text = generate_response(query, chunks)
-    
-    CHUNK_SIZE = 80  # characters per streamed chunk
-    
-    for i in range(0, len(response_text), CHUNK_SIZE):
-        chunk_text = response_text[i:i+CHUNK_SIZE]
-        data = json.dumps({"type": "token", "content": chunk_text})
-        yield f"data: {data}\n\n"
-    
-    final_data = json.dumps({
-        "type": "done",
-        "references": references
-    })
-    yield f"data: {final_data}\n\n"
+async def stream_response(query: str, chunks: List[Dict], references: List[Dict], query_embedding: List[float] = None, cached_result=None):
+    if cached_result:
+        response_text, cached_refs = cached_result
+        CHUNK_SIZE = 80
+        for i in range(0, len(response_text), CHUNK_SIZE):
+            yield f"data: {json.dumps({'type': 'token', 'content': response_text[i:i+CHUNK_SIZE]})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'references': cached_refs, 'input_tokens': 0, 'output_tokens': 0})}\n\n"
+        return
+
+    full_response_text = ""
+    async for chunk in stream_generate_response(query, chunks, references):
+        if chunk.startswith("data: "):
+            try:
+                s = chunk[6:].strip()
+                if s:
+                    data = json.loads(s)
+                    if data.get("type") == "token":
+                        full_response_text += data.get("content", "")
+            except Exception:
+                pass
+        yield chunk
+
+    if not DISABLE_SEMANTIC_CACHE and query_embedding and full_response_text:
+        cleaned = clean_response_text(extract_assistant_response(full_response_text))
+        set_cached_response(query_embedding, cleaned, references)
 
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     query = request.message
-    
     query_embedding = generate_query_embedding(query)
-    chunks = search_chunks(query_embedding, top_k=5)
-    
+
+    if not DISABLE_SEMANTIC_CACHE:
+        cache_task = asyncio.to_thread(get_cached_response, query_embedding, CACHE_SIMILARITY_THRESHOLD)
+        retrieval_task = asyncio.to_thread(search_chunks, query_embedding, 5)
+        cached_result, chunks = await asyncio.gather(cache_task, retrieval_task)
+    else:
+        cached_result = None
+        chunks = await asyncio.to_thread(search_chunks, query_embedding, 5)
+
     references: List[Dict] = []
     for chunk in chunks:
         clean_text = strip_chunk_metadata(chunk["text"])
@@ -321,9 +420,9 @@ async def chat(request: ChatRequest):
                 "snippet": snippet,
             }
         )
-    
+
     return StreamingResponse(
-        stream_response(query, chunks, references),
+        stream_response(query, chunks, references, query_embedding, cached_result),
         media_type="text/event-stream"
     )
 
