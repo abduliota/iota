@@ -57,6 +57,10 @@ body {
     --input: 220 13% 91%;
     --ring: 243 75% 59%;
     --radius: 0.75rem;
+    /* Sidebar - ChatGPT style */
+    --sidebar-bg: 220 14% 98%;
+    --sidebar-hover: 243 100% 97%;
+    --sidebar-active: 243 100% 94%;
   }
 
   .dark {
@@ -85,7 +89,34 @@ body {
     --destructive-foreground: 0 0% 100%;
     --input: 215 28% 17%;
     --ring: 239 84% 67%;
+    /* Sidebar dark */
+    --sidebar-bg: 222 47% 11%;
+    --sidebar-hover: 215 28% 17%;
+    --sidebar-active: 243 75% 25%;
   }
+}
+
+/* Sidebar scroll - hidden until hover */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.15s ease;
+}
+.sidebar-scroll:hover {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.4);
 }
 
 @layer base {

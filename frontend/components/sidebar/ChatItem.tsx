@@ -10,40 +10,39 @@ interface ChatItemProps {
 }
 
 export function ChatItem({ chat, isSelected, onClick, onDelete }: ChatItemProps) {
-  const formatDate = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    return date.toLocaleDateString();
-  };
-
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`group p-3 rounded-lg cursor-pointer hover:bg-gray-800 transition-all duration-200 ${
-        isSelected ? 'bg-blue-900 border border-blue-700' : ''
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`group flex items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-normal leading-snug transition-colors duration-150 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg ${
+        isSelected
+          ? 'bg-sidebar-active text-foreground border-l-2 border-l-accent -ml-[2px] pl-[10px]'
+          : 'text-muted-foreground hover:bg-sidebar-hover hover:text-foreground'
       }`}
     >
-      <div className="flex justify-between items-start">
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate text-white">{chat.title}</div>
-          <div className="text-xs text-gray-400 mt-1">{formatDate(chat.updatedAt)}</div>
-        </div>
-        <Button
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="text-xs p-1 h-auto opacity-0 group-hover:opacity-100"
-        >
-          ✕
-        </Button>
-      </div>
+      <span className="flex-1 min-w-0 truncate" title={chat.title}>
+        {chat.title}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onDelete();
+        }}
+        className="h-7 w-7 shrink-0 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-muted-foreground hover:text-foreground focus-visible:opacity-100"
+        aria-label="Delete chat"
+      >
+        <span className="text-xs">✕</span>
+      </Button>
     </div>
   );
 }

@@ -90,17 +90,16 @@ export default function Home() {
         />
       </div>
 
-      {/* Desktop / tablet sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 shrink-0 border-r border-border bg-card">
-        {/* Logo header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <img src="/logo.jpeg" alt="IOTA Technologies" className="h-8 w-8" />
-          <span className="text-sm font-medium text-foreground">
+      {/* Desktop sidebar - ChatGPT style, 260px */}
+      <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 border-r border-border bg-sidebar-bg transition-[background-color] duration-200">
+        <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
+          <img src="/logo.jpeg" alt="IOTA Technologies" className="h-8 w-8 rounded" />
+          <span className="text-sm font-medium text-foreground truncate">
             IOTA Technologies
           </span>
         </div>
-        <ChatHistory 
-          selectedChatId={selectedChatId} 
+        <ChatHistory
+          selectedChatId={selectedChatId}
           onSelectChat={setSelectedChatId}
         />
       </aside>
@@ -142,28 +141,28 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Mobile slide-in sidebar */}
+        {/* Mobile off-canvas drawer - same sidebar style */}
         {isSidebarOpen && (
           <div className="fixed inset-0 z-40 flex md:hidden">
             <div
-              className="absolute inset-0 bg-black/40"
+              className="absolute inset-0 bg-black/40 transition-opacity duration-200"
               onClick={() => setIsSidebarOpen(false)}
+              aria-hidden
             />
-            <div className="relative z-50 h-full w-72 max-w-full bg-background border-r border-border shadow-lg flex flex-col">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-sm font-medium">
-                  Chats
-                </span>
+            <div className="relative z-50 h-full w-[260px] max-w-[85vw] bg-sidebar-bg border-r border-border shadow-xl flex flex-col transition-transform duration-200">
+              <div className="flex items-center justify-between px-3 py-3 border-b border-border shrink-0">
+                <span className="text-sm font-medium text-foreground">Chats</span>
                 <button
-                  className="text-xs text-muted-foreground hover:text-foreground"
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-sidebar-hover transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent"
                   onClick={() => setIsSidebarOpen(false)}
                   aria-label="Close sidebar"
                 >
                   ✕
                 </button>
               </div>
-              <ChatHistory 
-                selectedChatId={selectedChatId} 
+              <ChatHistory
+                selectedChatId={selectedChatId}
                 onSelectChat={(id) => {
                   setSelectedChatId(id);
                   setIsSidebarOpen(false);
