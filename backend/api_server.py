@@ -277,6 +277,7 @@ def planner_plan(
 
     regulator_tokens = {"sama", "cma"}
     generic_rule_tokens = {"rules", "regulations", "law", "laws", "requirements"}
+    soft_role_tokens = {"do", "role", "responsibilities"}
     has_regulator_token = any(t in regulator_tokens for t in tokens)
     has_generic_rule_token = any(t in generic_rule_tokens for t in tokens)
     short_regulator_rules_query = (
@@ -307,6 +308,18 @@ def planner_plan(
     if need_retrieval and any(p in q for p in FOLLOW_UP_PATTERNS):
         query_intent = "follow_up"
 
+    # Clarification‑bound short follow‑ups, e.g. user replies "governance"
+    last_clarification_options = state.get("last_clarification_options") or []
+    if (
+        need_retrieval
+        and token_count <= 2
+        and isinstance(last_clarification_options, list)
+        and state.get("last_intent") in ("analysis", "explanation")
+    ):
+        opts_lower = {str(o).lower() for o in last_clarification_options}
+        if any(t in opts_lower for t in tokens):
+            query_intent = "follow_up"
+
     # Definition / entity intent
     if need_retrieval and query_intent == "general":
         if (
@@ -320,6 +333,12 @@ def planner_plan(
             query_intent = "definition"
         # e.g. "what sama regulations"
         elif q.startswith("what ") and short_regulator_rules_query:
+            query_intent = "definition"
+        # e.g. "what does sama do", "what is the role of sama"
+        elif has_regulator_token and (
+            ("what does" in q and " do" in q)
+            or ("what is the role of" in q)
+        ):
             query_intent = "definition"
 
     # Short regulator + rules queries are treated as definition‑like even without explicit "what is"
@@ -347,11 +366,17 @@ def planner_plan(
     if need_retrieval:
         if query_intent == "definition":
             definition_like = True
-        elif short_regulator_rules_query:
-            definition_like = True
-        elif soft_regulator_rules_query and any(x in q for x in ["explain", "about"]):
-            # e.g. "can u explain me about sama rules?"
-            definition_like = True
+        else:
+            # Short regulator questions with generic rule/role words
+            if (
+                token_count <= 5
+                and has_regulator_token
+                and any(t in generic_rule_tokens or t in soft_role_tokens for t in tokens)
+            ):
+                definition_like = True
+            # Soft regulator rules queries with "explain" / "about"
+            elif soft_regulator_rules_query and any(x in q for x in ["explain", "about"]):
+                definition_like = True
 
     # Answer style & retrieval size by intent
     if query_intent == "definition":
@@ -395,6 +420,21 @@ def planner_plan(
         if query_intent == "definition" and updated_state.get("active_regulator"):
             updated_state["active_topic"] = f"{updated_state['active_regulator']}_overview"
 
+    # Broad overview flag: big‑topic questions like "cyber laws"
+    broad_overview = False
+    if need_retrieval and query_intent in ("analysis", "explanation"):
+        has_cyber = "cyber" in q
+        has_lawish = any(x in q for x in [" law", " laws", " regulations", " framework"])
+        has_gov_plus_risk = ("governance" in q) and any(
+            x in q for x in [" cyber", " risk", " it "]
+        )
+        has_specific_refs = bool(re.search(r"\b(article|section)\b", q)) or bool(
+            re.search(r"\d", q)
+        )
+        if (has_cyber and has_lawish) or has_gov_plus_risk:
+            if not has_specific_refs:
+                broad_overview = True
+
     return {
         "response_language": response_language,
         "query_intent": query_intent,
@@ -404,6 +444,7 @@ def planner_plan(
         "use_refiner": use_refiner,
         "updated_state": updated_state,
         "definition_like": definition_like,
+        "broad_overview": broad_overview,
     }
 
 
@@ -432,8 +473,10 @@ def rewrite_query(
     if intent in ("greeting", "acknowledgment", "goodbye"):
         return raw
 
-    # Follow‑up queries: lean on previous topic / query
+    # Follow‑up queries: lean on clarification topic / previous topic / query
     if intent == "follow_up" or any(p in normalized for p in FOLLOW_UP_PATTERNS):
+        if state.get("last_clarification_topic"):
+            return f"{state['last_clarification_topic']} - {raw}"
         if state.get("active_topic"):
             return f"{state['active_topic']} - more detail"
         if state.get("last_query"):
@@ -626,6 +669,8 @@ class ConversationStateModel(BaseModel):
     language: Optional[str] = None
     last_intent: Optional[str] = None
     last_query: Optional[str] = None
+    last_clarification_topic: Optional[str] = None
+    last_clarification_options: Optional[List[str]] = None
 
 
 class ChatRequest(BaseModel):
@@ -666,6 +711,7 @@ def run_agent_pipeline(
     plan = planner_plan(query, state)
     intent = plan.get("query_intent", "general")
     definition_like = bool(plan.get("definition_like"))
+    broad_overview = bool(plan.get("broad_overview"))
 
     if not plan.get("need_retrieval", True):
         if plan.get("query_intent") == "goodbye":
@@ -685,8 +731,18 @@ def run_agent_pipeline(
     filters["language"] = lang
 
     # Definition / definition‑like mode: language‑only filters, looser matching
-    if not (intent == "definition" or definition_like):
-        # Analysis / explanation: allow regulator scoping when known
+    if intent == "definition" or definition_like:
+        pass
+    elif broad_overview:
+        # Broad overview: apply regulator scope only when clearly known
+        if state.get("active_regulator"):
+            filters["regulator"] = state["active_regulator"]
+        elif "sama" in query.lower():
+            filters["regulator"] = "SAMA"
+        elif "cma" in query.lower():
+            filters["regulator"] = "CMA"
+    else:
+        # Narrow analysis / explanation: allow regulator scoping when known
         if state.get("active_regulator"):
             filters["regulator"] = state["active_regulator"]
         elif "sama" in query.lower():
@@ -697,8 +753,11 @@ def run_agent_pipeline(
     search_query = rewrite_query(query, plan, state)
     query_embedding = generate_query_embedding(search_query)
     effective_top_k = plan.get("top_k", 5)
-    if definition_like and effective_top_k < 12:
-        effective_top_k = 12
+    if definition_like or intent == "definition":
+        if effective_top_k < 12:
+            effective_top_k = 12
+    elif broad_overview and effective_top_k < 8:
+        effective_top_k = 8
     chunks = search_chunks(query_embedding, top_k=effective_top_k, filters=filters)
     chunks = rerank_chunks(chunks, top_n=5)
 
@@ -714,27 +773,39 @@ def run_agent_pipeline(
                     updated_state["active_regulator"] = key.upper()
                     updated_state["active_topic"] = f"{key.upper()}_overview"
                     return text, [], updated_state
-        response_text = generate_clarification_message(query, plan.get("updated_state") or state)
         updated_state = plan.get("updated_state") or state
+        response_text = generate_clarification_message(query, updated_state)
+        # Bind clarification topic/options for follow‑ups where relevant
+        if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
+            updated_state["last_clarification_topic"] = updated_state["active_topic"]
+            updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
         return response_text, [], updated_state
 
     max_similarity = max(c.get("similarity", 0) for c in chunks)
 
     # Intent‑specific relevance thresholds
-    if intent == "definition" or definition_like:
-        threshold = DEF_RELEVANCE_THRESHOLD
-    else:
-        threshold = RELEVANCE_THRESHOLD
-
     # Refusal rules
     if intent == "definition" or definition_like:
         # Do not refuse definition / definition‑like queries unless zero chunks (handled above)
         pass
-    else:
-        # For analysis/explanation, refuse if relevance is low OR too few chunks
-        if max_similarity < threshold or (intent in ("analysis", "explanation") and len(chunks) < 2):
-            response_text = generate_clarification_message(query, plan.get("updated_state") or state)
+    elif broad_overview:
+        # Broad overview: allow answering with fewer chunks as long as similarity is reasonable
+        if max_similarity < DEF_RELEVANCE_THRESHOLD or len(chunks) < 1:
             updated_state = plan.get("updated_state") or state
+            response_text = generate_clarification_message(query, updated_state)
+            if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
+                updated_state["last_clarification_topic"] = updated_state["active_topic"]
+                updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
+            return response_text, [], updated_state
+    else:
+        # For strict analysis/explanation, refuse if relevance is low OR too few chunks
+        threshold = RELEVANCE_THRESHOLD
+        if max_similarity < threshold or (intent in ("analysis", "explanation") and len(chunks) < 2):
+            updated_state = plan.get("updated_state") or state
+            response_text = generate_clarification_message(query, updated_state)
+            if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
+                updated_state["last_clarification_topic"] = updated_state["active_topic"]
+                updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
             return response_text, [], updated_state
 
     references = []
