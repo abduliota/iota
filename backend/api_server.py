@@ -43,19 +43,47 @@ model = None
 tokenizer = None
 embedding_client = None
 
-# Config
+# Config: relevance & intent behaviour
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.5"))
+DEF_RELEVANCE_THRESHOLD = float(os.environ.get("DEF_RELEVANCE_THRESHOLD", "0.25"))
+
 GREETING_PATTERNS = [
     "hi", "hello", "hey", "thanks", "thank you", "ok", "okay", "bye", "goodbye",
     "مرحبا", "السلام عليكم", "شكرا", "مع السلامة",
 ]
-ACRONYM_REWRITES = {
-    "sama": "What is the Saudi Arabian Monetary Authority and what does it regulate?",
-    "cma": "What is the Capital Market Authority in Saudi Arabia?",
-    "ksa": "What are KSA financial regulations?",
+
+# Simple bootstrap knowledge for core regulators (used only when RAG fails for definitions)
+REGULATOR_BOOTSTRAP = {
+    "sama": (
+        "The Saudi Arabian Monetary Authority (SAMA) is the central bank and primary "
+        "financial regulator of Saudi Arabia."
+    ),
+    "cma": (
+        "The Capital Market Authority (CMA) regulates securities and capital markets "
+        "in Saudi Arabia."
+    ),
 }
+
+ACRONYM_REWRITES = {
+    "sama": (
+        "Definition and role of the Saudi Arabian Monetary Authority under "
+        "Saudi Arabian financial regulations"
+    ),
+    "cma": (
+        "Definition and role of the Capital Market Authority under "
+        "Saudi Arabian capital market regulations"
+    ),
+}
+
 FOLLOW_UP_PATTERNS = [
-    "explain more", "tell me more", "go on", "continue", "what about that", "elaborate", "and?", "more detail",
+    "explain more",
+    "tell me more",
+    "go on",
+    "continue",
+    "what about that",
+    "elaborate",
+    "and?",
+    "more detail",
 ]
 
 
@@ -231,10 +259,19 @@ def planner_plan(
     user_query: str,
     conversation_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Planner Agent: decide intent, language, need_retrieval, answer style, retrieval size."""
+    """
+    Planner Agent: decide intent, language, need_retrieval, answer style, retrieval size.
+
+    Supported intents:
+    - greeting
+    - definition
+    - explanation
+    - analysis
+    - follow_up
+    """
     state = conversation_state or {}
-    q = user_query.strip().lower()
     raw = user_query.strip()
+    q = raw.lower()
 
     # Language: from state or detect
     response_language = state.get("language") or detect_language(user_query)
@@ -253,16 +290,49 @@ def planner_plan(
                 query_intent = "greeting"
             break
 
-    if need_retrieval:
-        if any(x in q for x in ["explain", "overview", "what is", "what are", "how does", "why"]):
-            query_intent = "explanation"
-        elif any(x in q for x in ["list", "which are", "name the", "what are the"]):
-            query_intent = "list"
-        elif any(x in q for x in ["how to", "steps", "procedure", "process"]):
-            query_intent = "procedural"
+    # Follow‑up intent: short query referencing previous topic
+    if need_retrieval and any(p in q for p in FOLLOW_UP_PATTERNS):
+        query_intent = "follow_up"
 
-    answer_style = "conversational" if query_intent == "explanation" else "structured"
-    top_k = 8 if query_intent == "explanation" else 5
+    # Definition / entity intent
+    if need_retrieval and query_intent == "general":
+        if (
+            q.startswith("what is ")
+            or q.startswith("what's ")
+            or q.startswith("who is ")
+            or q.startswith("who's ")
+            or (" what does " in q and " mean" in q)
+        ):
+            query_intent = "definition"
+
+    # Explanation / analysis intents
+    if need_retrieval and query_intent == "general":
+        if any(x in q for x in ["explain", "overview", "how does", "why"]):
+            query_intent = "explanation"
+        elif any(
+            x in q
+            for x in [
+                "list",
+                "requirements",
+                "controls",
+                "governance",
+                "laws",
+                "compliance",
+            ]
+        ):
+            query_intent = "analysis"
+
+    # Answer style & retrieval size by intent
+    if query_intent == "definition":
+        answer_style = "conversational"
+        top_k = 12
+    elif query_intent in ("explanation", "analysis"):
+        answer_style = "conversational" if query_intent == "explanation" else "structured"
+        top_k = 5
+    else:
+        answer_style = "structured"
+        top_k = 5
+
     use_refiner = False
 
     # Updated state fields for response
@@ -273,14 +343,22 @@ def planner_plan(
         "active_topic": state.get("active_topic"),
         "active_regulator": state.get("active_regulator"),
     }
+
     if need_retrieval and raw:
         updated_state["last_query"] = raw
+        # Basic regulator detection
         if "sama" in q or "ساما" in user_query:
             updated_state["active_regulator"] = "SAMA"
-        if "cma" in q or "cma" in user_query:
+        if "cma" in q or "هيئة السوق المالية" in user_query:
             updated_state["active_regulator"] = "CMA"
-        if query_intent == "explanation" or query_intent == "list":
+
+        # Topic tracking
+        if query_intent in ("definition", "explanation", "analysis"):
             updated_state["active_topic"] = raw[:80] if len(raw) > 10 else (state.get("active_topic") or raw[:80])
+
+        # On successful definition, set a stable topic label
+        if query_intent == "definition" and updated_state.get("active_regulator"):
+            updated_state["active_topic"] = f"{updated_state['active_regulator']}_overview"
 
     return {
         "response_language": response_language,
@@ -298,43 +376,73 @@ def rewrite_query(
     plan: Dict[str, Any],
     conversation_state: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Rewrite user query into explicit regulatory search query."""
+    """
+    Rewrite user query into explicit regulatory search query.
+
+    - Normalize input (lowercase, strip punctuation, collapse whitespace)
+    - Apply acronym rewrites only for definition intent
+    - Expand vague follow‑ups using active_topic / last_query
+    """
     state = conversation_state or {}
-    q = query.strip().lower()
+    intent = plan.get("query_intent", "general")
 
-    # Follow-up patterns: use state context
-    for pat in FOLLOW_UP_PATTERNS:
-        if pat in q or (len(q.split()) <= 3 and q in ["more", "detail", "and"]):
-            if state.get("active_topic"):
-                return f"{state['active_topic']} - detailed explanation"
-            if state.get("last_query"):
-                return state["last_query"]
-            break
+    # Normalization
+    raw = query.strip()
+    lower = raw.lower()
+    normalized = re.sub(r"[^a-z0-9\s]", " ", lower)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
 
-    # Acronym / abbreviation rewrites
-    for acronym, rewritten in ACRONYM_REWRITES.items():
-        if acronym in q and ("what" in q or "explain" in q or "define" in q or "mean" in q):
-            return rewritten
+    # Do not rewrite greetings
+    if intent in ("greeting", "acknowledgment", "goodbye"):
+        return raw
 
-    # Vague query + state context
-    if state.get("active_regulator") and len(q.split()) <= 4:
-        return f"{state['active_regulator']}: {query.strip()}"
-    if state.get("active_topic") and q in ["requirements", "rules", "what"]:
-        return f"{state['active_topic']} {query.strip()}"
+    # Follow‑up queries: lean on previous topic / query
+    if intent == "follow_up" or any(p in normalized for p in FOLLOW_UP_PATTERNS):
+        if state.get("active_topic"):
+            return f"{state['active_topic']} - more detail"
+        if state.get("last_query"):
+            return state["last_query"]
+        return raw
 
-    return query.strip()
+    # Acronym / abbreviation rewrites – only for definition intent
+    if intent == "definition":
+        for acronym, rewritten in ACRONYM_REWRITES.items():
+            if re.search(rf"\b{acronym}\b", normalized):
+                return rewritten
+
+    # Vague queries + state context
+    tokens = normalized.split()
+    if state.get("active_regulator") and len(tokens) <= 4 and intent in ("definition", "explanation", "analysis"):
+        return f"{state['active_regulator']}: {raw}"
+
+    if state.get("active_topic") and normalized in ("requirements", "rules", "what"):
+        return f"{state['active_topic']} {raw}"
+
+    return raw
 
 
 def generate_clarification_message(query: str, state: Dict[str, Any]) -> str:
     """Return a clarification prompt when retrieval is low relevance."""
-    if state.get("active_topic"):
+    intent = state.get("last_intent")
+
+    # Definition‑style clarification
+    if intent == "definition":
         return (
-            f"I couldn't find specific information about that. "
-            f"Are you asking about {state['active_topic']}, or something else? Could you rephrase your question?"
+            "I couldn't confidently find a clear definition for that from the current documents. "
+            "Are you asking about a specific regulator like SAMA or CMA?"
         )
+
+    # Analysis/explanation with topic
+    if intent in ("analysis", "explanation") and state.get("active_topic"):
+        return (
+            f"I couldn't find specific regulatory text related to {state['active_topic']}. "
+            "Are you asking about governance, scope, or controls?"
+        )
+
+    # Generic fallback
     return (
-        "I couldn't find relevant information for your query. "
-        "Could you please rephrase or provide more details? I can help with SAMA, CMA, and other KSA regulatory questions."
+        "I couldn't find relevant regulatory text for that question. "
+        "Could you rephrase it with more detail, such as the regulator and topic?"
     )
 
 
@@ -430,7 +538,7 @@ def generate_response(
     lang = plan.get("response_language", "en")
 
     used_chunks = chunks
-    if intent == "explanation":
+    if intent in ("explanation", "analysis"):
         non_glossary = [c for c in chunks if not is_glossary_section(c.get("section_heading"))]
         if non_glossary:
             used_chunks = non_glossary
@@ -441,11 +549,17 @@ def generate_response(
     )
 
     lang_rule = "Respond in English only." if lang == "en" else "Respond in Arabic only."
-    style_rule = (
-        "Start with a direct explanation in 1–3 sentences, then add 3–5 bullets only if listing obligations or steps."
-        if answer_style == "conversational"
-        else "Give a concise answer; use bullets only when listing specific items."
-    )
+    if intent == "definition":
+        style_rule = (
+            "Start with a plain‑language definition in the first sentence, then briefly explain the role and "
+            "regulatory context. Use bullets only if you list key responsibilities."
+        )
+    elif answer_style == "conversational":
+        style_rule = (
+            "Start with a direct explanation in 1–3 sentences, then add 3–5 bullets only if listing obligations or steps."
+        )
+    else:
+        style_rule = "Give a concise answer; use bullets only when listing specific items."
 
     system_content = GENERATOR_SYSTEM + "\n" + lang_rule + "\n" + style_rule + "\n"
 
@@ -514,6 +628,7 @@ def run_agent_pipeline(
 ) -> tuple[str, List[Dict], Dict[str, Any]]:
     state = conversation_state or {}
     plan = planner_plan(query, state)
+    intent = plan.get("query_intent", "general")
 
     if not plan.get("need_retrieval", True):
         if plan.get("query_intent") == "goodbye":
@@ -527,32 +642,63 @@ def run_agent_pipeline(
         updated_state = plan.get("updated_state") or state
         return response_text, [], updated_state
 
-    # Build filters from state / plan
+    # Build filters from state / plan and choose retrieval mode
     filters: Dict[str, str] = {}
     lang = state.get("language") or plan.get("response_language") or detect_language(query)
     filters["language"] = lang
-    if state.get("active_regulator"):
-        filters["regulator"] = state["active_regulator"]
-    elif "sama" in query.lower():
-        filters["regulator"] = "SAMA"
-    elif "cma" in query.lower():
-        filters["regulator"] = "CMA"
+
+    # Definition mode: language‑only filters, looser matching
+    if intent == "definition":
+        pass  # language filter already set above; no regulator/domain filter here
+    else:
+        # Analysis / explanation: allow regulator scoping when known
+        if state.get("active_regulator"):
+            filters["regulator"] = state["active_regulator"]
+        elif "sama" in query.lower():
+            filters["regulator"] = "SAMA"
+        elif "cma" in query.lower():
+            filters["regulator"] = "CMA"
 
     search_query = rewrite_query(query, plan, state)
     query_embedding = generate_query_embedding(search_query)
     chunks = search_chunks(query_embedding, top_k=plan["top_k"], filters=filters)
     chunks = rerank_chunks(chunks, top_n=5)
 
+    # Handle no or low‑relevance results
     if not chunks:
-        response_text = generate_clarification_message(query, state)
+        # Optional bootstrap for core regulators in definition mode
+        if intent == "definition":
+            lower = query.lower()
+            for key, text in REGULATOR_BOOTSTRAP.items():
+                if key in lower:
+                    updated_state = plan.get("updated_state") or state
+                    # On successful definition, keep language & regulator in state
+                    if key.upper() in ("SAMA", "CMA"):
+                        updated_state["active_regulator"] = key.upper()
+                        updated_state["active_topic"] = f"{key.upper()}_overview"
+                    return text, [], updated_state
+        response_text = generate_clarification_message(query, plan.get("updated_state") or state)
         updated_state = plan.get("updated_state") or state
         return response_text, [], updated_state
 
     max_similarity = max(c.get("similarity", 0) for c in chunks)
-    if max_similarity < RELEVANCE_THRESHOLD:
-        response_text = generate_clarification_message(query, state)
-        updated_state = plan.get("updated_state") or state
-        return response_text, [], updated_state
+
+    # Intent‑specific relevance thresholds
+    if intent == "definition":
+        threshold = DEF_RELEVANCE_THRESHOLD
+    else:
+        threshold = RELEVANCE_THRESHOLD
+
+    # Refusal rules
+    if intent == "definition":
+        # Do not refuse definition queries unless zero chunks (handled above) – allow loose match
+        pass
+    else:
+        # For analysis/explanation, refuse if relevance is low OR too few chunks
+        if max_similarity < threshold or (intent in ("analysis", "explanation") and len(chunks) < 2):
+            response_text = generate_clarification_message(query, plan.get("updated_state") or state)
+            updated_state = plan.get("updated_state") or state
+            return response_text, [], updated_state
 
     references = []
     for chunk in chunks:
