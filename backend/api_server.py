@@ -148,6 +148,92 @@ def detect_language(text: str) -> str:
     return "en"
 
 
+def search_chunks_by_keywords(
+    query_text: str,
+    top_k: int = 5,
+    filters: Optional[Dict[str, str]] = None,
+) -> List[Dict]:
+    """Keyword search on section_heading for structural queries."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    filters = filters or {}
+    
+    # Extract meaningful keywords (2+ chars, not stopwords)
+    stopwords = {"the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with", "by"}
+    keywords = [w.lower() for w in re.findall(r'\b\w{2,}\b', query_text.lower()) if w.lower() not in stopwords]
+    
+    if not keywords:
+        cur.close()
+        conn.close()
+        return []
+    
+    where_parts = ["c.section_heading IS NOT NULL"]
+    params: List[Any] = []
+    
+    # Build ILIKE conditions for section_heading
+    section_conditions = []
+    for keyword in keywords[:5]:  # Limit to 5 keywords
+        section_conditions.append("c.section_heading ILIKE %s")
+        params.append(f"%{keyword}%")
+    
+    where_parts.append(f"({' OR '.join(section_conditions)})")
+    
+    if filters.get("language"):
+        where_parts.append("c.language = %s")
+    use_regulator = bool(filters.get("regulator"))
+    if use_regulator:
+        where_parts.append("d.regulator = %s")
+    
+    where_sql = " AND ".join(where_parts)
+    
+    if filters.get("language"):
+        params.append(filters["language"])
+    if use_regulator:
+        params.append(filters["regulator"])
+    params.append(top_k)
+    
+    sql = f"""
+        SELECT 
+            c.id,
+            c.text,
+            c.chunk_index,
+            c.section_heading,
+            d.filename,
+            d.page_title,
+            0.8 as similarity
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE {where_sql}
+        ORDER BY c.chunk_index
+        LIMIT %s
+    """
+    try:
+        cur.execute(sql, params)
+    except psycopg2.ProgrammingError as e:
+        if "regulator" in str(e) and "does not exist" in str(e).lower():
+            filters_no_reg = {k: v for k, v in filters.items() if k != "regulator"}
+            cur.close()
+            conn.close()
+            return search_chunks_by_keywords(query_text, top_k, filters_no_reg)
+        raise
+    
+    results = []
+    for row in cur.fetchall():
+        results.append({
+            "id": str(row[0]),
+            "text": row[1],
+            "chunk_index": row[2],
+            "section_heading": row[3],
+            "filename": row[4],
+            "page_title": row[5],
+            "similarity": float(row[6]),
+        })
+    
+    cur.close()
+    conn.close()
+    return results
+
+
 def search_chunks(
     query_embedding: List[float],
     top_k: int = 5,
@@ -458,6 +544,59 @@ def planner_plan(
     }
 
 
+def expand_query(query: str, plan: Dict[str, Any], conversation_state: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Generate query variations for better recall."""
+    state = conversation_state or {}
+    intent = plan.get("query_intent", "general")
+    broad_overview = plan.get("broad_overview", False)
+    definition_like = plan.get("definition_like", False)
+    
+    variations = [query]  # Always include original
+    
+    q_lower = query.lower()
+    
+    # For broad/framework queries: add synonyms
+    if broad_overview or "law" in q_lower or "laws" in q_lower:
+        if "law" in q_lower:
+            variations.append(query.replace("law", "regulation").replace("Law", "Regulation"))
+            variations.append(query.replace("law", "framework").replace("Law", "Framework"))
+        if "laws" in q_lower:
+            variations.append(query.replace("laws", "regulations").replace("Laws", "Regulations"))
+            variations.append(query.replace("laws", "frameworks").replace("Laws", "Frameworks"))
+    
+    # Add regulator context if missing
+    if "sama" not in q_lower and "cma" not in q_lower:
+        active_regulator = state.get("active_regulator")
+        if active_regulator:
+            variations.append(f"{active_regulator} {query}")
+        elif intent in ("definition", "explanation", "analysis"):
+            # Default to SAMA for regulatory queries
+            variations.append(f"SAMA {query}")
+    
+    # For definitions: add context variations
+    if intent == "definition" or definition_like:
+        if not q_lower.startswith("what"):
+            variations.append(f"what is {query}")
+        variations.append(f"definition of {query}")
+    
+    # Limit to 3 variations to control cost
+    return variations[:3]
+
+
+def decompose_query(query: str) -> List[str]:
+    """Break complex multi-part queries into sub-queries."""
+    # Detect conjunction patterns
+    conjunctions = [" and ", " or ", ", ", " plus "]
+    
+    for conj in conjunctions:
+        if conj in query.lower():
+            parts = [p.strip() for p in query.split(conj)]
+            if len(parts) >= 2 and all(len(p.split()) >= 2 for p in parts):
+                return parts
+    
+    return [query]  # No decomposition needed
+
+
 def rewrite_query(
     query: str,
     plan: Dict[str, Any],
@@ -559,22 +698,83 @@ def generate_clarification_message(query: str, state: Dict[str, Any], chunks: Op
     )
 
 
+def reciprocal_rank_fusion(result_lists: List[List[Dict]], k: int = 60) -> List[Dict]:
+    """Merge multiple ranked result lists using Reciprocal Rank Fusion."""
+    chunk_scores = {}
+    chunk_data = {}
+    
+    for result_list in result_lists:
+        for rank, chunk in enumerate(result_list, start=1):
+            chunk_id = chunk.get("id")
+            if chunk_id:
+                if chunk_id not in chunk_scores:
+                    chunk_scores[chunk_id] = 0
+                    chunk_data[chunk_id] = chunk
+                chunk_scores[chunk_id] += 1.0 / (k + rank)
+    
+    # Sort by combined score
+    sorted_chunks = sorted(
+        chunk_data.items(),
+        key=lambda x: chunk_scores[x[0]],
+        reverse=True
+    )
+    
+    return [chunk_data[cid] for cid, _ in sorted_chunks]
+
+
 # --- Reranker: relevance + diversity, limit N ---
-def rerank_chunks(chunks: List[Dict], top_n: int = 5) -> List[Dict]:
-    """Reranker Agent: dedupe by source/section, keep top by similarity."""
+def rerank_chunks(chunks: List[Dict], top_n: int = 5, query: Optional[str] = None) -> List[Dict]:
+    """Reranker Agent: section-aware reranking with diversity and relevance."""
     if len(chunks) <= top_n:
         return chunks[:top_n]
-    seen = set()
-    out = []
-    for c in chunks:
-        key = (c.get("filename", ""), c.get("section_heading") or "")
-        if key in seen:
+    
+    query_lower = (query or "").lower()
+    query_words = set(query_lower.split()) if query else set()
+    
+    # Score chunks with section relevance boost
+    scored_chunks = []
+    for chunk in chunks:
+        base_score = chunk.get("similarity", 0)
+        
+        # Boost: section heading matches query keywords
+        section_heading = (chunk.get("section_heading") or "").lower()
+        if section_heading and query_words:
+            section_words = set(section_heading.split())
+            overlap = len(query_words & section_words)
+            if overlap > 0:
+                base_score += 0.1 * min(overlap, 3)  # Boost up to 0.3
+        
+        scored_chunks.append((base_score, chunk))
+    
+    # Sort by score
+    scored_chunks.sort(key=lambda x: x[0], reverse=True)
+    
+    # Diversity: prefer different sections
+    seen_sections = set()
+    diverse_results = []
+    seen_chunk_ids = set()
+    
+    # First pass: one chunk per section
+    for score, chunk in scored_chunks:
+        chunk_id = chunk.get("id")
+        if chunk_id in seen_chunk_ids:
             continue
-        seen.add(key)
-        out.append(c)
-        if len(out) >= top_n:
+        
+        section_key = (chunk.get("filename", ""), chunk.get("section_heading") or "")
+        
+        if section_key not in seen_sections:
+            diverse_results.append(chunk)
+            seen_sections.add(section_key)
+            seen_chunk_ids.add(chunk_id)
+        elif len(diverse_results) < top_n:
+            # Still add if we need more
+            diverse_results.append(chunk)
+            seen_chunk_ids.add(chunk_id)
+        
+        if len(diverse_results) >= top_n:
             break
-    return out if out else chunks[:top_n]
+    
+    return diverse_results[:top_n] if diverse_results else chunks[:top_n]
 
 
 # --- Critic Refiner (optional) ---
@@ -649,12 +849,36 @@ def generate_response(
     intent = plan.get("query_intent", "general")
     answer_style = plan.get("answer_style", "conversational")
     lang = plan.get("response_language", "en")
+    broad_overview = plan.get("broad_overview", False)
 
     used_chunks = chunks
     if intent in ("explanation", "analysis"):
         non_glossary = [c for c in chunks if not is_glossary_section(c.get("section_heading"))]
         if non_glossary:
             used_chunks = non_glossary
+
+    # Group chunks by section for framework-style answers
+    if broad_overview and len(used_chunks) > 3:
+        # Organize by section_heading for better framework explanation
+        sections = {}
+        for chunk in used_chunks:
+            section = chunk.get("section_heading") or "General"
+            if section not in sections:
+                sections[section] = []
+            sections[section].append(chunk)
+        
+        # Reorder: prefer chunks from different sections
+        grouped_chunks = []
+        seen_sections = set()
+        for chunk in used_chunks:
+            section = chunk.get("section_heading") or "General"
+            if section not in seen_sections:
+                grouped_chunks.append(chunk)
+                seen_sections.add(section)
+            elif len(grouped_chunks) < len(used_chunks):
+                grouped_chunks.append(chunk)
+        
+        used_chunks = grouped_chunks[:len(used_chunks)]
 
     context = "\n\n".join(
         f"[{i+1}] {strip_chunk_metadata(chunk['text'])[:1000]}"
@@ -668,6 +892,16 @@ def generate_response(
             "Then provide 2-3 sentences about their role, responsibilities, and regulatory context. "
             "Be helpful and informative, not just a dictionary entry. Use bullets only if listing "
             "3-5 key responsibilities or functions."
+        )
+    elif broad_overview:
+        # Framework explanation style for broad queries
+        style_rule = (
+            "Provide a high-level framework overview. Explain how requirements are organized across "
+            "different areas or sections. Use section headings from the context to structure your answer. "
+            "Avoid claiming explicit hierarchy - instead explain how topics relate. If the question asks "
+            "about 'laws' but the context shows 'controls' or 'frameworks', explain that SAMA organizes "
+            "requirements as frameworks/controls rather than a single list of laws. Be helpful and "
+            "expert-sounding, not defensive."
         )
     elif answer_style == "conversational":
         style_rule = (
@@ -787,15 +1021,59 @@ def run_agent_pipeline(
             filters["regulator"] = "CMA"
 
     search_query = rewrite_query(query, plan, state)
-    query_embedding = generate_query_embedding(search_query)
+    
+    # Query decomposition for multi-part queries
+    decomposed_queries = decompose_query(search_query)
+    
+    # Multi-query expansion for better recall
+    all_query_variations = []
+    for dq in decomposed_queries:
+        variations = expand_query(dq, plan, state)
+        all_query_variations.extend(variations)
+    
+    # Limit total variations to control cost (max 5 queries)
+    all_query_variations = list(dict.fromkeys(all_query_variations))[:5]
+    
+    # Calculate effective top_k per query
     effective_top_k = plan.get("top_k", 5)
     if definition_like or intent == "definition":
         if effective_top_k < 12:
             effective_top_k = 12
     elif broad_overview and effective_top_k < 8:
         effective_top_k = 8
-    chunks = search_chunks(query_embedding, top_k=effective_top_k, filters=filters)
-    chunks = rerank_chunks(chunks, top_n=5)
+    
+    # Adjust top_k per query when using multiple queries
+    per_query_top_k = effective_top_k if len(all_query_variations) == 1 else max(5, effective_top_k // len(all_query_variations))
+    
+    # Hybrid search: vector + keyword
+    all_chunks = []
+    chunk_ids_seen = set()
+    
+    for query_variation in all_query_variations:
+        # Vector search
+        query_embedding = generate_query_embedding(query_variation)
+        vector_chunks = search_chunks(query_embedding, top_k=per_query_top_k, filters=filters)
+        
+        # Keyword search on section_heading (only for first query to avoid duplicates)
+        if query_variation == all_query_variations[0]:
+            keyword_chunks = search_chunks_by_keywords(query_variation, top_k=per_query_top_k, filters=filters)
+            
+            # Merge vector and keyword results
+            for chunk in vector_chunks + keyword_chunks:
+                chunk_id = chunk.get("id")
+                if chunk_id and chunk_id not in chunk_ids_seen:
+                    all_chunks.append(chunk)
+                    chunk_ids_seen.add(chunk_id)
+        else:
+            # For subsequent queries, only use vector search
+            for chunk in vector_chunks:
+                chunk_id = chunk.get("id")
+                if chunk_id and chunk_id not in chunk_ids_seen:
+                    all_chunks.append(chunk)
+                    chunk_ids_seen.add(chunk_id)
+    
+    # Rerank with section awareness
+    chunks = rerank_chunks(all_chunks, top_n=5, query=search_query)
 
     # Handle no or low‑relevance results
     if not chunks:
@@ -817,10 +1095,10 @@ def run_agent_pipeline(
             updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
         return response_text, [], updated_state
 
-    max_similarity = max(c.get("similarity", 0) for c in chunks)
+    max_similarity = max(c.get("similarity", 0) for c in chunks) if chunks else 0
 
     # Intent‑specific relevance thresholds
-    # Refusal rules
+    # Refusal rules - updated to explain when partial signal exists
     if intent == "definition" or definition_like:
         # Do not refuse definition / definition‑like queries unless zero chunks (handled above)
         pass
@@ -835,15 +1113,21 @@ def run_agent_pipeline(
                 updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
             return response_text, [], updated_state
     else:
-        # For strict analysis/explanation, refuse if relevance is low OR too few chunks
+        # For strict analysis/explanation: refuse only if truly no signal
         threshold = RELEVANCE_THRESHOLD
+        # If we have chunks but below threshold, check if we should explain cautiously
+        has_partial_signal = len(chunks) > 0 and max_similarity > DEF_RELEVANCE_THRESHOLD
+        
         if max_similarity < threshold or (intent in ("analysis", "explanation") and len(chunks) < 2):
-            updated_state = plan.get("updated_state") or state
-            response_text = generate_clarification_message(query, updated_state, chunks=chunks)
-            if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
-                updated_state["last_clarification_topic"] = updated_state["active_topic"]
-                updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
-            return response_text, [], updated_state
+            # Only refuse if truly no signal; otherwise explain cautiously
+            if not has_partial_signal:
+                updated_state = plan.get("updated_state") or state
+                response_text = generate_clarification_message(query, updated_state, chunks=chunks)
+                if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
+                    updated_state["last_clarification_topic"] = updated_state["active_topic"]
+                    updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
+                return response_text, [], updated_state
+            # If has_partial_signal, continue to generation (will produce cautious answer)
 
     references = []
     for chunk in chunks:
