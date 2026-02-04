@@ -82,7 +82,12 @@ export default function Home() {
       <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 border-r border-border bg-sidebar-bg transition-[background-color] duration-200">
         <div className="flex items-center justify-between gap-2.5 px-3 py-3 border-b border-border">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-10 w-10 shrink-0 rounded-lg" />
+            <img
+              src="/logo.jpeg"
+              alt="IOTA Technologies"
+              className="h-[38px] w-[52px] shrink-0 rounded-lg"
+              draggable={false}
+            />
             <span className="truncate text-[15px] font-medium text-foreground">
               IOTA Technologies
             </span>
@@ -109,7 +114,12 @@ export default function Home() {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <img src="/logo.jpeg" alt="IOTA Technologies" className="h-10 w-10 shrink-0 rounded-lg" />
+            <img
+              src="/logo.jpeg"
+              alt="IOTA Technologies"
+              className="h-[38px] w-[52px] shrink-0 rounded-lg"
+              draggable={false}
+            />
             <span className="truncate text-[15px] font-medium text-foreground">
               IOTA Technologies
             </span>
