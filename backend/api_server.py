@@ -272,6 +272,19 @@ def planner_plan(
     state = conversation_state or {}
     raw = user_query.strip()
     q = raw.lower()
+    tokens = q.split()
+    token_count = len(tokens)
+
+    regulator_tokens = {"sama", "cma"}
+    generic_rule_tokens = {"rules", "regulations", "law", "laws", "requirements"}
+    has_regulator_token = any(t in regulator_tokens for t in tokens)
+    has_generic_rule_token = any(t in generic_rule_tokens for t in tokens)
+    short_regulator_rules_query = (
+        0 < token_count <= 4 and has_regulator_token and has_generic_rule_token
+    )
+    soft_regulator_rules_query = has_regulator_token and has_generic_rule_token
+
+    definition_like = False
 
     # Language: from state or detect
     response_language = state.get("language") or detect_language(user_query)
@@ -299,11 +312,19 @@ def planner_plan(
         if (
             q.startswith("what is ")
             or q.startswith("what's ")
+            or q.startswith("whats ")
             or q.startswith("who is ")
             or q.startswith("who's ")
             or (" what does " in q and " mean" in q)
         ):
             query_intent = "definition"
+        # e.g. "what sama regulations"
+        elif q.startswith("what ") and short_regulator_rules_query:
+            query_intent = "definition"
+
+    # Short regulator + rules queries are treated as definition‑like even without explicit "what is"
+    if need_retrieval and query_intent == "general" and short_regulator_rules_query:
+        query_intent = "definition"
 
     # Explanation / analysis intents
     if need_retrieval and query_intent == "general":
@@ -322,6 +343,16 @@ def planner_plan(
         ):
             query_intent = "analysis"
 
+    # Definition‑like flag (used to relax retrieval/guardrails)
+    if need_retrieval:
+        if query_intent == "definition":
+            definition_like = True
+        elif short_regulator_rules_query:
+            definition_like = True
+        elif soft_regulator_rules_query and any(x in q for x in ["explain", "about"]):
+            # e.g. "can u explain me about sama rules?"
+            definition_like = True
+
     # Answer style & retrieval size by intent
     if query_intent == "definition":
         answer_style = "conversational"
@@ -332,6 +363,10 @@ def planner_plan(
     else:
         answer_style = "structured"
         top_k = 5
+
+    # Ensure definition‑like questions get broader retrieval
+    if definition_like and top_k < 12:
+        top_k = 12
 
     use_refiner = False
 
@@ -368,6 +403,7 @@ def planner_plan(
         "top_k": top_k,
         "use_refiner": use_refiner,
         "updated_state": updated_state,
+        "definition_like": definition_like,
     }
 
 
@@ -629,6 +665,7 @@ def run_agent_pipeline(
     state = conversation_state or {}
     plan = planner_plan(query, state)
     intent = plan.get("query_intent", "general")
+    definition_like = bool(plan.get("definition_like"))
 
     if not plan.get("need_retrieval", True):
         if plan.get("query_intent") == "goodbye":
@@ -647,10 +684,8 @@ def run_agent_pipeline(
     lang = state.get("language") or plan.get("response_language") or detect_language(query)
     filters["language"] = lang
 
-    # Definition mode: language‑only filters, looser matching
-    if intent == "definition":
-        pass  # language filter already set above; no regulator/domain filter here
-    else:
+    # Definition / definition‑like mode: language‑only filters, looser matching
+    if not (intent == "definition" or definition_like):
         # Analysis / explanation: allow regulator scoping when known
         if state.get("active_regulator"):
             filters["regulator"] = state["active_regulator"]
@@ -661,21 +696,23 @@ def run_agent_pipeline(
 
     search_query = rewrite_query(query, plan, state)
     query_embedding = generate_query_embedding(search_query)
-    chunks = search_chunks(query_embedding, top_k=plan["top_k"], filters=filters)
+    effective_top_k = plan.get("top_k", 5)
+    if definition_like and effective_top_k < 12:
+        effective_top_k = 12
+    chunks = search_chunks(query_embedding, top_k=effective_top_k, filters=filters)
     chunks = rerank_chunks(chunks, top_n=5)
 
     # Handle no or low‑relevance results
     if not chunks:
-        # Optional bootstrap for core regulators in definition mode
-        if intent == "definition":
-            lower = query.lower()
+        # Optional bootstrap for core regulators in definition / definition‑like mode
+        lower = query.lower()
+        if intent == "definition" or (definition_like and ("sama" in lower or "cma" in lower)):
             for key, text in REGULATOR_BOOTSTRAP.items():
                 if key in lower:
                     updated_state = plan.get("updated_state") or state
                     # On successful definition, keep language & regulator in state
-                    if key.upper() in ("SAMA", "CMA"):
-                        updated_state["active_regulator"] = key.upper()
-                        updated_state["active_topic"] = f"{key.upper()}_overview"
+                    updated_state["active_regulator"] = key.upper()
+                    updated_state["active_topic"] = f"{key.upper()}_overview"
                     return text, [], updated_state
         response_text = generate_clarification_message(query, plan.get("updated_state") or state)
         updated_state = plan.get("updated_state") or state
@@ -684,14 +721,14 @@ def run_agent_pipeline(
     max_similarity = max(c.get("similarity", 0) for c in chunks)
 
     # Intent‑specific relevance thresholds
-    if intent == "definition":
+    if intent == "definition" or definition_like:
         threshold = DEF_RELEVANCE_THRESHOLD
     else:
         threshold = RELEVANCE_THRESHOLD
 
     # Refusal rules
-    if intent == "definition":
-        # Do not refuse definition queries unless zero chunks (handled above) – allow loose match
+    if intent == "definition" or definition_like:
+        # Do not refuse definition / definition‑like queries unless zero chunks (handled above)
         pass
     else:
         # For analysis/explanation, refuse if relevance is low OR too few chunks
