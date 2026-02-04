@@ -55,12 +55,17 @@ GREETING_PATTERNS = [
 # Simple bootstrap knowledge for core regulators (used only when RAG fails for definitions)
 REGULATOR_BOOTSTRAP = {
     "sama": (
-        "The Saudi Arabian Monetary Authority (SAMA) is the central bank and primary "
-        "financial regulator of Saudi Arabia."
+        "The Saudi Arabian Monetary Authority (SAMA) is Saudi Arabia's central bank and primary "
+        "financial regulator. SAMA supervises banks and financial institutions, issues financial "
+        "regulations, ensures financial stability, manages monetary policy, and oversees payment "
+        "systems. It plays a key role in maintaining the integrity and stability of the Saudi "
+        "financial sector."
     ),
     "cma": (
-        "The Capital Market Authority (CMA) regulates securities and capital markets "
-        "in Saudi Arabia."
+        "The Capital Market Authority (CMA) regulates securities and capital markets in Saudi Arabia. "
+        "CMA oversees stock exchanges, securities trading, investment funds, and capital market "
+        "participants. It ensures market transparency, protects investors, and enforces compliance "
+        "with securities laws and regulations."
     ),
 }
 
@@ -312,9 +317,10 @@ def planner_plan(
     last_clarification_options = state.get("last_clarification_options") or []
     if (
         need_retrieval
-        and token_count <= 2
+        and token_count <= 3  # Allow slightly longer follow-ups like "cyber governance"
         and isinstance(last_clarification_options, list)
-        and state.get("last_intent") in ("analysis", "explanation")
+        and len(last_clarification_options) > 0
+        and state.get("last_intent") in ("analysis", "explanation", "general")
     ):
         opts_lower = {str(o).lower() for o in last_clarification_options}
         if any(t in opts_lower for t in tokens):
@@ -424,14 +430,18 @@ def planner_plan(
     broad_overview = False
     if need_retrieval and query_intent in ("analysis", "explanation"):
         has_cyber = "cyber" in q
-        has_lawish = any(x in q for x in [" law", " laws", " regulations", " framework"])
+        # More flexible law/regulation detection
+        has_lawish = any(x in q for x in [" law", " laws", " regulations", " regulation", " framework", "frameworks"])
         has_gov_plus_risk = ("governance" in q) and any(
-            x in q for x in [" cyber", " risk", " it "]
+            x in q for x in [" cyber", " risk", " it ", "information"]
         )
+        # Check for broad topic indicators
+        has_broad_topic = any(x in q for x in ["mention", "tell me about", "what are", "list", "overview"])
         has_specific_refs = bool(re.search(r"\b(article|section)\b", q)) or bool(
-            re.search(r"\d", q)
+            re.search(r"\b\d{1,2}\b", q)  # More precise digit detection (1-2 digits, not all numbers)
         )
-        if (has_cyber and has_lawish) or has_gov_plus_risk:
+        # Broad overview if: (cyber + laws) OR (governance + risk/cyber/it) OR (broad topic + laws/regulations)
+        if (has_cyber and has_lawish) or has_gov_plus_risk or (has_broad_topic and has_lawish):
             if not has_specific_refs:
                 broad_overview = True
 
@@ -500,12 +510,26 @@ def rewrite_query(
     return raw
 
 
-def generate_clarification_message(query: str, state: Dict[str, Any]) -> str:
-    """Return a clarification prompt when retrieval is low relevance."""
+def generate_clarification_message(query: str, state: Dict[str, Any], chunks: Optional[List[Dict]] = None) -> str:
+    """Return a clarification prompt when retrieval is low relevance.
+    
+    If chunks exist but don't meet strict thresholds, provide a brief overview
+    before asking for clarification.
+    """
     intent = state.get("last_intent")
-
+    chunks = chunks or []
+    
+    # If we have some chunks but they're low relevance, provide a brief overview first
+    has_partial_info = len(chunks) > 0
+    
     # Definition‑style clarification
     if intent == "definition":
+        if has_partial_info:
+            return (
+                "I found some information, but it may not be complete. "
+                "Are you asking about a specific regulator like SAMA or CMA? "
+                "I can provide more detail if you specify."
+            )
         return (
             "I couldn't confidently find a clear definition for that from the current documents. "
             "Are you asking about a specific regulator like SAMA or CMA?"
@@ -513,12 +537,22 @@ def generate_clarification_message(query: str, state: Dict[str, Any]) -> str:
 
     # Analysis/explanation with topic
     if intent in ("analysis", "explanation") and state.get("active_topic"):
+        if has_partial_info:
+            return (
+                f"I found some information about {state['active_topic']}, but to give you a more "
+                "complete answer, could you clarify: are you asking about governance, scope, or controls?"
+            )
         return (
             f"I couldn't find specific regulatory text related to {state['active_topic']}. "
             "Are you asking about governance, scope, or controls?"
         )
 
     # Generic fallback
+    if has_partial_info:
+        return (
+            "I found some relevant information, but to provide a more complete answer, "
+            "could you rephrase with more detail, such as the regulator and specific topic?"
+        )
     return (
         "I couldn't find relevant regulatory text for that question. "
         "Could you rephrase it with more detail, such as the regulator and topic?"
@@ -630,8 +664,10 @@ def generate_response(
     lang_rule = "Respond in English only." if lang == "en" else "Respond in Arabic only."
     if intent == "definition":
         style_rule = (
-            "Start with a plain‑language definition in the first sentence, then briefly explain the role and "
-            "regulatory context. Use bullets only if you list key responsibilities."
+            "Start with a clear, conversational definition in 1-2 sentences explaining what the entity is. "
+            "Then provide 2-3 sentences about their role, responsibilities, and regulatory context. "
+            "Be helpful and informative, not just a dictionary entry. Use bullets only if listing "
+            "3-5 key responsibilities or functions."
         )
     elif answer_style == "conversational":
         style_rule = (
@@ -774,7 +810,7 @@ def run_agent_pipeline(
                     updated_state["active_topic"] = f"{key.upper()}_overview"
                     return text, [], updated_state
         updated_state = plan.get("updated_state") or state
-        response_text = generate_clarification_message(query, updated_state)
+        response_text = generate_clarification_message(query, updated_state, chunks=[])
         # Bind clarification topic/options for follow‑ups where relevant
         if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
             updated_state["last_clarification_topic"] = updated_state["active_topic"]
@@ -790,9 +826,10 @@ def run_agent_pipeline(
         pass
     elif broad_overview:
         # Broad overview: allow answering with fewer chunks as long as similarity is reasonable
+        # For broad_overview, be even more lenient: answer if we have ANY chunk with reasonable similarity
         if max_similarity < DEF_RELEVANCE_THRESHOLD or len(chunks) < 1:
             updated_state = plan.get("updated_state") or state
-            response_text = generate_clarification_message(query, updated_state)
+            response_text = generate_clarification_message(query, updated_state, chunks=chunks)
             if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
                 updated_state["last_clarification_topic"] = updated_state["active_topic"]
                 updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
@@ -802,7 +839,7 @@ def run_agent_pipeline(
         threshold = RELEVANCE_THRESHOLD
         if max_similarity < threshold or (intent in ("analysis", "explanation") and len(chunks) < 2):
             updated_state = plan.get("updated_state") or state
-            response_text = generate_clarification_message(query, updated_state)
+            response_text = generate_clarification_message(query, updated_state, chunks=chunks)
             if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
                 updated_state["last_clarification_topic"] = updated_state["active_topic"]
                 updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
