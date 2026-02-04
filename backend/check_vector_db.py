@@ -157,6 +157,170 @@ def search_section_headings(keyword, language="en"):
     print()
 
 
+SECTIONS_TO_CHECK = [
+    "Banking Sector",
+    "Laws and Regulations",
+    "Licensing Provisions",
+    "Anti Money Laundering and Combating the Financing of Terrorism",
+    "Cyber Risk Control",
+    "Governance and Internal Control",
+    "Prudential and Supervisory Requirements",
+    "Preface",
+    "Minimum Capital Requirements",
+    "Leverage",
+    "Large Exposures",
+    "Risk Management",
+    "Disclosure and Reporting Requirements",
+    "Macroprudential Policy",
+    "Foreign Banks Branches",
+    "Foreign Bank Branch Instructions",
+    "SAMA Approach to Foreign Banks Branches (FBB) Regulation",
+    "Corporate Governance and Risk Management",
+    "Funding Ratio (FR) Requirements",
+    "Liquidity Requirements",
+    "Business Activities and Financial Conduct",
+    "Enforcement and Financial Penalties",
+    "Banking Sector Circulars",
+    "Finance Sector",
+    "Payment Systems and Payment Services Providers",
+    "Money Exchange Sector",
+    "Credit Bureaus",
+    "Regulatory Sandbox",
+    "SAMA Circulars"
+]
+
+
+def check_sections_exist(section_list, language="en"):
+    """
+    Check if sections exist in the database.
+    
+    For each section:
+    1. Try exact match in section_heading
+    2. Try partial match (contains keywords)
+    3. Try searching in chunk text (if heading doesn't match)
+    """
+    
+    conn = psycopg2.connect(
+        host=PGHOST,
+        port=PGPORT,
+        dbname=PGDATABASE,
+        user=PGUSER,
+        password=PGPASSWORD,
+        sslmode="require",
+    )
+    cur = conn.cursor()
+    
+    results = {
+        "found_exact": [],      # Exact section_heading match
+        "found_partial": [],    # Partial match in section_heading
+        "found_in_text": [],    # Found in chunk text but not heading
+        "not_found": []         # Completely missing
+    }
+    
+    for section_name in section_list:
+        # 1. Exact match in section_heading
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM chunks c
+            WHERE c.language = %s 
+              AND c.section_heading = %s
+        """, (language, section_name))
+        
+        exact_count = cur.fetchone()[0]
+        
+        if exact_count > 0:
+            results["found_exact"].append((section_name, exact_count))
+            continue
+        
+        # 2. Partial match in section_heading (contains key words)
+        # Use first 2-3 meaningful words (skip common words)
+        stopwords = {"the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with", "by"}
+        keywords = [w for w in section_name.split() if w.lower() not in stopwords][:3]
+        
+        if keywords:
+            keyword_conditions = " AND ".join(["c.section_heading ILIKE %s" for _ in keywords])
+            params = [language] + [f"%{kw}%" for kw in keywords]
+            
+            cur.execute(f"""
+                SELECT COUNT(*) 
+                FROM chunks c
+                WHERE c.language = %s 
+                  AND ({keyword_conditions})
+            """, params)
+            
+            partial_count = cur.fetchone()[0]
+            
+            if partial_count > 0:
+                results["found_partial"].append((section_name, partial_count))
+                continue
+        
+        # 3. Search in chunk text (not just heading)
+        # Use first few words of section name
+        search_terms = " ".join(section_name.split()[:4])
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM chunks c
+            WHERE c.language = %s 
+              AND c.text ILIKE %s
+        """, (language, f"%{search_terms}%"))
+        
+        text_count = cur.fetchone()[0]
+        
+        if text_count > 0:
+            results["found_in_text"].append((section_name, text_count))
+        else:
+            results["not_found"].append(section_name)
+    
+    cur.close()
+    conn.close()
+    return results
+
+
+def print_section_check_results(results):
+    """Print results in a readable format."""
+    
+    print("\n" + "="*80)
+    print("SECTION EXISTENCE CHECK RESULTS")
+    print("="*80 + "\n")
+    
+    # Exact matches
+    if results['found_exact']:
+        print(f"✅ EXACT MATCHES ({len(results['found_exact'])}):")
+        for section, count in results['found_exact']:
+            print(f"   • {section}: {count} chunks")
+        print()
+    
+    # Partial matches
+    if results['found_partial']:
+        print(f"⚠️  PARTIAL MATCHES ({len(results['found_partial'])}):")
+        for section, count in results['found_partial']:
+            print(f"   • {section}: {count} chunks (matched by keywords in section_heading)")
+        print()
+    
+    # Found in text only
+    if results['found_in_text']:
+        print(f"📄 FOUND IN TEXT ONLY ({len(results['found_in_text'])}):")
+        for section, count in results['found_in_text']:
+            print(f"   • {section}: {count} chunks (found in chunk text, not section heading)")
+        print()
+    
+    # Not found
+    if results['not_found']:
+        print(f"❌ NOT FOUND ({len(results['not_found'])}):")
+        for section in results['not_found']:
+            print(f"   • {section}")
+        print()
+    
+    # Summary
+    total = len(results['found_exact']) + len(results['found_partial']) + \
+            len(results['found_in_text']) + len(results['not_found'])
+    found_total = total - len(results['not_found'])
+    
+    print("="*80)
+    print(f"SUMMARY: {found_total}/{total} sections found ({found_total*100//total if total > 0 else 0}%)")
+    print("="*80 + "\n")
+
+
 if __name__ == "__main__":
     # Check English chunks
     check_vector_db(language="en", limit=10)
@@ -171,3 +335,11 @@ if __name__ == "__main__":
     search_section_headings("provisions", language="en")
     search_section_headings("AML", language="en")
     search_section_headings("credit risk", language="en")
+    
+    # Check all sections from the list
+    print("\n" + "="*80)
+    print("Checking all sections from Banking Sector structure:")
+    print("="*80)
+    
+    results = check_sections_exist(SECTIONS_TO_CHECK, language="en")
+    print_section_check_results(results)
