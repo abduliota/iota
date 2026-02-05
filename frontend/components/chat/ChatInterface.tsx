@@ -65,7 +65,8 @@ export function ChatInterface({ messages, onNewMessage, canSend = true, onLimitR
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_URL}/api/chat`, {
+      // Use LLM-only backend endpoint (no RAG) for now
+      const response = await fetch(`${API_URL}/api/chat-llm-only`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

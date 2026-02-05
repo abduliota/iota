@@ -947,6 +947,67 @@ def generate_response(
     return clean_response_text(raw_text)
 
 
+def generate_llm_only_response(
+    query: str,
+    conversation_state: Optional[Dict[str, Any]] = None,
+    max_new_tokens: int = 384,
+) -> str:
+    """
+    Generate response using pure LLM (no RAG) with banking/regulatory domain constraints.
+    This bypasses embeddings, DB search, and RAG context - just uses the fine-tuned model.
+    """
+    model, tokenizer = load_model()
+    device = next(model.parameters()).device
+
+    system_prompt = (
+        "You are a regulatory AI assistant specializing in Saudi Arabian banking and financial regulations. "
+        "You answer questions about SAMA (Saudi Central Bank), CMA (Capital Market Authority), banking sector rules, "
+        "licensing provisions, governance, compliance, and related regulatory topics.\n\n"
+        "Rules:\n"
+        "- Answer ONLY questions related to banking, finance, and regulatory matters in Saudi Arabia.\n"
+        "- If asked about non-regulatory topics, politely redirect: 'I specialize in Saudi banking and financial "
+        "regulations. Could you rephrase your question about SAMA, CMA, or banking rules?'\n"
+        "- For acronyms like 'SAMA', always interpret them in the banking/regulatory context (Saudi Central Bank).\n"
+        "- Be conversational, clear, and professional. Use your knowledge from regulatory training data.\n"
+        "- If you don't know something specific, say so rather than guessing.\n"
+        "- Start with a direct answer in 1–3 sentences, then add bullets only if listing obligations or steps."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": query},
+    ]
+
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+
+    inputs = tokenizer(
+        formatted_prompt,
+        return_tensors="pt",
+        truncation=True,
+        max_length=2048,
+    ).to(device)
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            temperature=0.3,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+
+    prompt_len = inputs["input_ids"].shape[1]
+    response = tokenizer.decode(
+        outputs[0][prompt_len:],
+        skip_special_tokens=True,
+    )
+    return response.strip()
+
+
 class ConversationStateModel(BaseModel):
     active_topic: Optional[str] = None
     active_regulator: Optional[str] = None
@@ -1244,6 +1305,50 @@ async def chat(request: ChatRequest):
         stream_response(response_text, references, updated_state),
         media_type="text/event-stream",
     )
+
+
+@app.post("/api/chat-llm-only")
+async def chat_llm_only(request: ChatRequest):
+    """
+    Pure LLM endpoint - no RAG, no embeddings, no DB search.
+    Uses only the fine-tuned model with banking domain constraints.
+    """
+    query = request.message
+    state = _state_to_dict(request.conversation_state)
+
+    logger.info(
+        "chat_llm_only_request | query=%r | state=%s",
+        query,
+        json.dumps(state, default=str)[:500],
+    )
+
+    try:
+        response_text = generate_llm_only_response(query, state)
+        references: List[Dict[str, Any]] = []
+
+        logger.info(
+            "chat_llm_only_success | query=%r | response_length=%d",
+            query,
+            len(response_text),
+        )
+
+        return StreamingResponse(
+            stream_response(response_text, references, state),
+            media_type="text/event-stream",
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(
+            "chat_llm_only_error | query=%r | error=%s",
+            query,
+            str(exc),
+        )
+        error_response = (
+            "I encountered an error while processing your request. Please try again."
+        )
+        return StreamingResponse(
+            stream_response(error_response, [], state),
+            media_type="text/event-stream",
+        )
 
 
 @app.get("/health")
