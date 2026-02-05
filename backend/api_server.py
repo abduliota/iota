@@ -1351,6 +1351,20 @@ async def chat_llm_only(request: ChatRequest):
         )
 
 
+@app.options("/api/chat-llm-only")
+async def chat_llm_only_options():
+    """Handle OPTIONS preflight requests for CORS."""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
