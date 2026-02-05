@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,20 @@ from peft import PeftModel
 import asyncio
 
 load_dotenv()
+
+# Logging configuration: write to a single backend log file and stdout
+LOG_FILE = os.environ.get("BACKEND_LOG_FILE", "/iota/backend_app.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+
+logger = logging.getLogger("backend")
 
 app = FastAPI()
 
@@ -983,6 +998,16 @@ def run_agent_pipeline(
     definition_like = bool(plan.get("definition_like"))
     broad_overview = bool(plan.get("broad_overview"))
 
+    logger.info(
+        "plan | query=%r | intent=%s | definition_like=%s | broad_overview=%s | top_k=%s | lang=%s",
+        query,
+        intent,
+        definition_like,
+        broad_overview,
+        plan.get("top_k"),
+        plan.get("response_language"),
+    )
+
     if not plan.get("need_retrieval", True):
         if plan.get("query_intent") == "goodbye":
             response_text = "Goodbye! Feel free to return if you have more questions."
@@ -1075,6 +1100,14 @@ def run_agent_pipeline(
     # Rerank with section awareness
     chunks = rerank_chunks(all_chunks, top_n=5, query=search_query)
 
+    logger.info(
+        "retrieval | query=%r | search_query=%r | variations=%d | chunks=%d",
+        query,
+        search_query,
+        len(all_query_variations),
+        len(chunks),
+    )
+
     # Handle no or low‑relevance results
     if not chunks:
         # Optional bootstrap for core regulators in definition / definition‑like mode
@@ -1086,6 +1119,11 @@ def run_agent_pipeline(
                     # On successful definition, keep language & regulator in state
                     updated_state["active_regulator"] = key.upper()
                     updated_state["active_topic"] = f"{key.upper()}_overview"
+                    logger.info(
+                        "bootstrap_definition | query=%r | regulator=%s",
+                        query,
+                        key.upper(),
+                    )
                     return text, [], updated_state
         updated_state = plan.get("updated_state") or state
         response_text = generate_clarification_message(query, updated_state, chunks=[])
@@ -1093,9 +1131,22 @@ def run_agent_pipeline(
         if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
             updated_state["last_clarification_topic"] = updated_state["active_topic"]
             updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
+        logger.info(
+            "refusal | query=%r | intent=%s | reason=no_chunks | response=%r",
+            query,
+            intent,
+            response_text[:300],
+        )
         return response_text, [], updated_state
 
     max_similarity = max(c.get("similarity", 0) for c in chunks) if chunks else 0
+
+    logger.info(
+        "retrieval_metrics | query=%r | chunks=%d | max_similarity=%.3f",
+        query,
+        len(chunks),
+        max_similarity,
+    )
 
     # Intent‑specific relevance thresholds
     # Refusal rules - updated to explain when partial signal exists
@@ -1111,6 +1162,14 @@ def run_agent_pipeline(
             if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
                 updated_state["last_clarification_topic"] = updated_state["active_topic"]
                 updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
+            logger.info(
+                "refusal | query=%r | intent=%s | reason=broad_overview_low_signal | chunks=%d | max_similarity=%.3f | response=%r",
+                query,
+                intent,
+                len(chunks),
+                max_similarity,
+                response_text[:300],
+            )
             return response_text, [], updated_state
     else:
         # For strict analysis/explanation: refuse only if truly no signal
@@ -1126,6 +1185,14 @@ def run_agent_pipeline(
                 if intent in ("analysis", "explanation") and updated_state.get("active_topic"):
                     updated_state["last_clarification_topic"] = updated_state["active_topic"]
                     updated_state["last_clarification_options"] = ["governance", "scope", "controls"]
+                logger.info(
+                    "refusal | query=%r | intent=%s | reason=strict_low_signal | chunks=%d | max_similarity=%.3f | response=%r",
+                    query,
+                    intent,
+                    len(chunks),
+                    max_similarity,
+                    response_text[:300],
+                )
                 return response_text, [], updated_state
             # If has_partial_signal, continue to generation (will produce cautious answer)
 
@@ -1149,6 +1216,15 @@ def run_agent_pipeline(
             pass
 
     updated_state = plan.get("updated_state") or state
+
+    logger.info(
+        "success | query=%r | intent=%s | chunks=%d | references=%d",
+        query,
+        intent,
+        len(chunks),
+        len(references),
+    )
+
     return draft, references, updated_state
 
 
@@ -1156,6 +1232,13 @@ def run_agent_pipeline(
 async def chat(request: ChatRequest):
     query = request.message
     state = _state_to_dict(request.conversation_state)
+
+    logger.info(
+        "chat_request | query=%r | state=%s",
+        query,
+        json.dumps(state, default=str)[:500],
+    )
+
     response_text, references, updated_state = run_agent_pipeline(query, state)
     return StreamingResponse(
         stream_response(response_text, references, updated_state),
