@@ -130,6 +130,23 @@ export default function Home() {
               total={10}
               isAuthenticated={isAuthenticated}
             />
+            {!isAuthenticated ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAuthModal(true)}
+              >
+                Sign Up / Login
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={logout}
+              >
+                Logout
+              </Button>
+            )}
             <ThemeToggle />
             <Button
               size="icon"
@@ -179,11 +196,30 @@ export default function Home() {
           <div className="mx-auto w-full max-w-[1200px] flex flex-1 min-h-0 flex-col px-4 py-4 md:px-6 md:py-6">
             <SummaryCard
               rightSlot={
-                <PromptCounter
-                  remaining={remainingPrompts}
-                  total={10}
-                  isAuthenticated={isAuthenticated}
-                />
+                <div className="flex items-center gap-2">
+                  <PromptCounter
+                    remaining={remainingPrompts}
+                    total={10}
+                    isAuthenticated={isAuthenticated}
+                  />
+                  {!isAuthenticated ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAuthModal(true)}
+                    >
+                      Sign Up / Login
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={logout}
+                    >
+                      Logout
+                    </Button>
+                  )}
+                </div>
               }
             />
             <div className="mt-6 flex flex-1 min-h-0 gap-4 md:gap-6">
