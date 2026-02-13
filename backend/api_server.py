@@ -360,6 +360,53 @@ def is_glossary_section(heading) -> bool:
     return ("glossary" in h) or ("definition" in h)
 
 
+def is_sama_related_query(query: str, plan: Dict[str, Any], state: Dict[str, Any]) -> bool:
+    """
+    Check if query is related to SAMA/CMA/Saudi banking regulations.
+    Returns True if query is domain-relevant, False otherwise.
+    """
+    q_lower = query.lower()
+    
+    # Explicit regulator keywords
+    regulator_keywords = ["sama", "ساما", "cma", "هيئة السوق المالية"]
+    
+    # Domain keywords related to Saudi banking/regulations
+    domain_keywords = [
+        "saudi", "ksa", "kingdom", "banking", "regulatory", "financial", 
+        "monetary", "central bank", "compliance", "governance", "licensing",
+        "regulation", "regulations", "framework", "controls", "capital",
+        "bank", "banks", "financial institution", "fintech"
+    ]
+    
+    # Check for regulator keywords
+    has_regulator = any(kw in q_lower for kw in regulator_keywords)
+    
+    # Check for domain keywords
+    has_domain = any(kw in q_lower for kw in domain_keywords)
+    
+    # Check conversation context
+    active_regulator = state.get("active_regulator")
+    if active_regulator in ["SAMA", "CMA"]:
+        return True
+    
+    # For definition queries without regulator context, check if it's a known non-SAMA term
+    if plan.get("query_intent") == "definition":
+        # Common non-SAMA acronyms/terms that should be rejected
+        non_sama_definitions = [
+            "nora", "nasa", "fda", "epa", "irs", "cia", "fbi",
+            "general definition", "what does", "what is"
+        ]
+        # Only reject if it's clearly a non-SAMA term AND no regulator/domain keywords
+        if any(term in q_lower for term in non_sama_definitions) and not has_regulator and not has_domain:
+            # Check if query is too generic (just "what is X" without context)
+            tokens = q_lower.split()
+            if len(tokens) <= 4:  # Very short queries like "what is nora"
+                return False
+    
+    # Allow if has regulator or domain keywords
+    return has_regulator or has_domain
+
+
 # --- Planner (rule-based, predictable) ---
 def planner_plan(
     user_query: str,
@@ -947,6 +994,140 @@ def generate_response(
     return clean_response_text(raw_text)
 
 
+def generate_llm_only_with_sources(
+    query: str,
+    conversation_state: Optional[Dict[str, Any]] = None,
+    max_new_tokens: int = 384,
+) -> tuple[str, List[Dict], Dict[str, Any]]:
+    """
+    Hybrid approach: LLM-only generation with source retrieval for display.
+    
+    - Uses planner for intent detection and domain filtering
+    - Retrieves sources from vector DB (for display only, not injected into prompt)
+    - Generates response using LLM-only (no context injection)
+    - Enforces SAMA-only domain restriction
+    
+    Returns:
+        tuple: (response_text, references, updated_state)
+    """
+    state = conversation_state or {}
+    
+    # Step 1: Run planner for intent detection
+    plan = planner_plan(query, state)
+    intent = plan.get("query_intent", "general")
+    
+    logger.info(
+        "llm_only_hybrid | query=%r | intent=%s",
+        query,
+        intent,
+    )
+    
+    # Step 2: Domain filtering - check if query is SAMA-related
+    if not is_sama_related_query(query, plan, state):
+        rejection_msg = (
+            "I specialize in Saudi banking and financial regulations (SAMA, CMA). "
+            "Could you rephrase your question about SAMA regulations, CMA rules, or banking compliance?"
+        )
+        updated_state = plan.get("updated_state") or state
+        logger.info(
+            "llm_only_domain_rejection | query=%r | reason=non_sama_query",
+            query,
+        )
+        return rejection_msg, [], updated_state
+    
+    # Step 3: Handle greetings/acknowledgments (no retrieval needed)
+    if not plan.get("need_retrieval", True):
+        if plan.get("query_intent") == "goodbye":
+            response_text = "Goodbye! Feel free to return if you have more questions."
+        elif plan.get("query_intent") == "acknowledgment":
+            response_text = "You're welcome! Let me know if you need anything else."
+        else:
+            response_text = (
+                "Hello! I'm here to help with SAMA and KSA regulatory questions. How can I assist you?"
+            )
+        updated_state = plan.get("updated_state") or state
+        return response_text, [], updated_state
+    
+    # Step 4: Build filters for vector DB retrieval
+    filters: Dict[str, str] = {}
+    lang = state.get("language") or plan.get("response_language") or detect_language(query)
+    filters["language"] = lang
+    
+    # Add regulator filter if available
+    if state.get("active_regulator"):
+        filters["regulator"] = state["active_regulator"]
+    elif "sama" in query.lower():
+        filters["regulator"] = "SAMA"
+    elif "cma" in query.lower():
+        filters["regulator"] = "CMA"
+    
+    # Step 5: Query rewriting and expansion
+    search_query = rewrite_query(query, plan, state)
+    query_variations = expand_query(search_query, plan, state)
+    
+    # Limit variations to control cost
+    query_variations = list(dict.fromkeys(query_variations))[:3]
+    
+    # Step 6: Vector DB retrieval
+    all_chunks = []
+    chunk_ids_seen = set()
+    top_k = plan.get("top_k", 5)
+    
+    for query_variation in query_variations:
+        try:
+            query_embedding = generate_query_embedding(query_variation)
+            vector_chunks = search_chunks(query_embedding, top_k=top_k, filters=filters)
+            
+            for chunk in vector_chunks:
+                chunk_id = chunk.get("id")
+                if chunk_id and chunk_id not in chunk_ids_seen:
+                    all_chunks.append(chunk)
+                    chunk_ids_seen.add(chunk_id)
+        except Exception as e:
+            logger.warning(
+                "llm_only_retrieval_error | query_variation=%r | error=%s",
+                query_variation,
+                str(e),
+            )
+            continue
+    
+    # Step 7: Rerank chunks
+    chunks = rerank_chunks(all_chunks, top_n=5, query=search_query) if all_chunks else []
+    
+    logger.info(
+        "llm_only_retrieval | query=%r | chunks=%d",
+        query,
+        len(chunks),
+    )
+    
+    # Step 8: Build references from retrieved chunks
+    references = []
+    for chunk in chunks:
+        clean_text = strip_chunk_metadata(chunk["text"])
+        snippet = clean_text[:600] + "..." if len(clean_text) > 600 else clean_text
+        references.append({
+            "id": chunk["id"],
+            "source": chunk["filename"],
+            "page": chunk.get("chunk_index", 0),
+            "snippet": snippet,
+        })
+    
+    # Step 9: Generate LLM-only response (no context injection)
+    response_text = generate_llm_only_response(query, state, max_new_tokens)
+    
+    # Step 10: Update state
+    updated_state = plan.get("updated_state") or state
+    
+    logger.info(
+        "llm_only_hybrid_success | query=%r | response_length=%d | references=%d",
+        query,
+        len(response_text),
+        len(references),
+    )
+    
+    return response_text, references, updated_state
+
+
 def generate_llm_only_response(
     query: str,
     conversation_state: Optional[Dict[str, Any]] = None,
@@ -960,17 +1141,29 @@ def generate_llm_only_response(
     device = next(model.parameters()).device
 
     system_prompt = (
-        "You are a regulatory AI assistant specializing in Saudi Arabian banking and financial regulations. "
-        "You answer questions about SAMA (Saudi Central Bank), CMA (Capital Market Authority), banking sector rules, "
-        "licensing provisions, governance, compliance, and related regulatory topics.\n\n"
-        "Rules:\n"
-        "- Answer ONLY questions related to banking, finance, and regulatory matters in Saudi Arabia.\n"
-        "- If asked about non-regulatory topics, politely redirect: 'I specialize in Saudi banking and financial "
-        "regulations. Could you rephrase your question about SAMA, CMA, or banking rules?'\n"
-        "- For acronyms like 'SAMA', always interpret them in the banking/regulatory context (Saudi Central Bank).\n"
-        "- Be conversational, clear, and professional. Use your knowledge from regulatory training data.\n"
-        "- If you don't know something specific, say so rather than guessing.\n"
-        "- Start with a direct answer in 1–3 sentences, then add bullets only if listing obligations or steps."
+        "You are a regulatory AI assistant specializing EXCLUSIVELY in Saudi Arabian "
+        "banking and financial regulations.\n\n"
+        
+        "DOMAIN SCOPE:\n"
+        "- SAMA (Saudi Central Bank) regulations and rules\n"
+        "- CMA (Capital Market Authority) regulations\n"
+        "- Saudi banking sector compliance\n"
+        "- Financial licensing and governance\n"
+        "- Regulatory frameworks and controls\n\n"
+        
+        "CRITICAL RESTRICTIONS:\n"
+        "- DO NOT answer questions about general topics, non-Saudi entities, or non-regulatory matters\n"
+        "- DO NOT provide general definitions for acronyms outside the regulatory domain\n"
+        "- Example: If asked 'What is NORA?', respond: 'I specialize in Saudi banking regulations. "
+        "Could you clarify if you're asking about a SAMA-related term or rephrase your question?'\n"
+        "- If unsure whether a query is SAMA-related, ask for clarification rather than guessing\n"
+        "- For acronyms like 'SAMA', always interpret them in the banking/regulatory context (Saudi Central Bank)\n\n"
+        
+        "RESPONSE STYLE:\n"
+        "- Be conversational, clear, and professional\n"
+        "- Use your knowledge from regulatory training data\n"
+        "- Start with a direct answer in 1–3 sentences, then add bullets only if listing obligations or steps\n"
+        "- If you don't know something specific, say so rather than guessing\n"
     )
 
     messages = [
@@ -1310,8 +1503,10 @@ async def chat(request: ChatRequest):
 @app.post("/api/chat-llm-only")
 async def chat_llm_only(request: ChatRequest):
     """
-    Pure LLM endpoint - no RAG, no embeddings, no DB search.
-    Uses only the fine-tuned model with banking domain constraints.
+    Hybrid LLM-only endpoint:
+    - Uses LLM-only generation (no context injection into prompt)
+    - Retrieves sources from vector DB for display/citation
+    - Enforces SAMA-only domain restriction
     """
     query = request.message
     state = _state_to_dict(request.conversation_state)
@@ -1323,17 +1518,18 @@ async def chat_llm_only(request: ChatRequest):
     )
 
     try:
-        response_text = generate_llm_only_response(query, state)
-        references: List[Dict[str, Any]] = []
+        # Use hybrid function that retrieves sources but generates LLM-only response
+        response_text, references, updated_state = generate_llm_only_with_sources(query, state)
 
         logger.info(
-            "chat_llm_only_success | query=%r | response_length=%d",
+            "chat_llm_only_success | query=%r | response_length=%d | references=%d",
             query,
             len(response_text),
+            len(references),
         )
 
         return StreamingResponse(
-            stream_response(response_text, references, state),
+            stream_response(response_text, references, updated_state),
             media_type="text/event-stream",
         )
     except Exception as exc:  # pragma: no cover - defensive logging
